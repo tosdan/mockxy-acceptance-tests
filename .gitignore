@@ -1,3 +1,22 @@
 node_modules/
 test-results/
 playwright-report/
+
+# Configurazione locale e credenziali
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Chiavi e certificati privati
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+
+# Stato di autenticazione salvato dai browser/test
+playwright/.auth/
+.auth/
+storage-state*.json
+storageState*.json
