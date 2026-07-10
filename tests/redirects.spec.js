@@ -6,17 +6,15 @@ const stack = require("./stack");
 // risolvibile dall'host, quindi senza riscrittura il flusso muore davvero.
 test.describe("riscrittura dei redirect proxati", () => {
   test("il browser segue il redirect assoluto e resta su Mockxy", async ({ page }) => {
-    await page.goto("/");
+    const response = await page.goto(`${stack.mockxyBaseUrl}/api/redirect-absolute`);
 
-    const result = await page.evaluate(
-      (url) => window.callApi(url),
-      `${stack.mockxyBaseUrl}/api/redirect-absolute`
-    );
-
-    expect(result.blocked).toBe(false);
-    expect(result.redirected).toBe(true);
-    expect(result.url).toBe(`${stack.mockxyBaseUrl}/api/landing?from=redirect`);
-    expect(result.body).toEqual({ source: "backend", landed: true, from: "redirect" });
+    expect(response.ok()).toBe(true);
+    expect(page.url()).toBe(`${stack.mockxyBaseUrl}/api/landing?from=redirect`);
+    expect(await response.json()).toEqual({
+      source: "backend",
+      landed: true,
+      from: "redirect",
+    });
   });
 
   test("il Location assoluto verso il backend viene riscritto sull'host di Mockxy", async ({ request }) => {
