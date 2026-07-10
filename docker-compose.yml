@@ -1,0 +1,152 @@
+# Stack dei test esterni black-box di Mockxy: esercita l'IMMAGINE standalone vera
+# (build da ../mock-server) nella topologia reale «browser → Mockxy → backend».
+#
+#   client (nginx, :8081)  ──origin diversa──▶  mockxy (:8080, CORS attivo)
+#                                                  │ proxy fallback
+#                                                  ▼
+#                                               backend (:9000 interno, 9090 su host per debug)
+#
+# mockxy-raw (:8090) è la stessa immagine con CORS/adattamento cookie/riscrittura redirect
+# SPENTI: serve ai test di contrasto (il browser deve venire bloccato, gli header devono
+# passare intatti).
+# Healthcheck: un'istanza è pronta quando SERVE DAVVERO un mock del workspace, non quando
+# il processo è su. È la fonte di verità dell'attesa nei workflow (docker compose up --wait):
+# aggiungere qui l'healthcheck di ogni nuova istanza, nessuna lista di porte da tenere
+# allineata altrove. wget è il busybox delle immagini alpine.
+x-healthcheck-hello: &healthcheck-hello
+  test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/hello"]
+  interval: 1s
+  timeout: 5s
+  retries: 30
+  start_period: 3s
+
+services:
+  mockxy:
+    build:
+      context: ../mock-server
+      dockerfile: Dockerfile.standalone
+    image: mockxy-standalone-under-test
+    depends_on:
+      - backend
+    healthcheck: *healthcheck-hello
+    environment:
+      BACKEND_URL: "http://backend:9000"
+      PROXY_FALLBACK_ENABLED: "true"
+      CORS_ENABLED: "true"
+      # ADAPT_PROXY_COOKIES e REWRITE_PROXY_REDIRECTS restano ai default (true).
+      # Admin API attiva per i test delle sue difese; l'allowlist esplicita attiva la
+      # guardia DNS-rebinding anche sul bind di rete del container (i loopback restano ammessi).
+      ADMIN_API_ENABLED: "true"
+      ADMIN_ALLOWED_HOSTS: "localhost"
+    ports:
+      - "8080:3000"
+    volumes:
+      - ./workspace/mocks:/workspace/mocks:ro
+      - ./workspace/files:/workspace/files:ro
+
+  mockxy-raw:
+    image: mockxy-standalone-under-test
+    depends_on:
+      - mockxy # garantisce che l'immagine condivisa sia stata costruita
+      - backend
+    healthcheck: *healthcheck-hello
+    environment:
+      BACKEND_URL: "http://backend:9000"
+      PROXY_FALLBACK_ENABLED: "true"
+      CORS_ENABLED: "false"
+      ADAPT_PROXY_COOKIES: "false"
+      REWRITE_PROXY_REDIRECTS: "false"
+      # Timeout basso per i test di timeout del proxy: copre solo fino ai primi header di
+      # risposta (vedi docs/PROXY.md del motore); gli altri test su questa istanza sono
+      # chiamate in-network da pochi ms, non lo sfiorano.
+      REQUEST_TIMEOUT_MS: "1000"
+    ports:
+      - "8090:3000"
+    volumes:
+      - ./workspace/mocks:/workspace/mocks:ro
+      - ./workspace/files:/workspace/files:ro
+
+  # Istanza col ritardo globale: MOCKXY_DELAY sui mock senza delayMs proprio e, con
+  # MOCKXY_DELAY_ALL, anche sulle richieste proxate. Dedicata: rallenterebbe ogni altro test.
+  mockxy-delay:
+    image: mockxy-standalone-under-test
+    depends_on:
+      - mockxy
+      - backend
+    # Il ritardo globale (600ms) vale anche per l'healthcheck: il timeout di 5s lo copre.
+    healthcheck: *healthcheck-hello
+    environment:
+      BACKEND_URL: "http://backend:9000"
+      PROXY_FALLBACK_ENABLED: "true"
+      # Il motore legge il ritardo dalle npm config env (npm_config_*): MOCKXY_DELAY è solo
+      # la variabile host che il compose di sviluppo del motore mappa su queste.
+      npm_config_delay: "600"
+      npm_config_delay_all: "true"
+    ports:
+      - "8050:3000"
+    volumes:
+      - ./workspace/mocks:/workspace/mocks:ro
+      - ./workspace/files:/workspace/files:ro
+
+  # Istanza "commutabile" per il test della cache dei preflight: il test la ricrea a metà
+  # corsa con TOGGLE_CORS_ENABLED=false e poi la ripristina. Dedicata: il riavvio non deve
+  # toccare le istanze condivise dagli altri test.
+  mockxy-toggle:
+    image: mockxy-standalone-under-test
+    depends_on:
+      - mockxy
+      - backend
+    healthcheck: *healthcheck-hello
+    environment:
+      BACKEND_URL: "http://backend:9000"
+      PROXY_FALLBACK_ENABLED: "true"
+      CORS_ENABLED: "${TOGGLE_CORS_ENABLED:-true}"
+    ports:
+      - "8060:3000"
+    volumes:
+      - ./workspace/mocks:/workspace/mocks:ro
+      - ./workspace/files:/workspace/files:ro
+
+  # Immagine di SVILUPPO (Dockerfile root: NODE_ENV development, watch attivo di default):
+  # serve al test di hot reload — modifica di un mock sul filesystem host vista dal watcher
+  # nel container via polling (gli eventi nativi non attraversano i bind mount).
+  # Il workspace è dedicato e scrivibile: il test lo modifica davvero.
+  mockxy-dev:
+    build:
+      context: ../mock-server
+      dockerfile: Dockerfile
+    image: mockxy-dev-under-test
+    depends_on:
+      - backend
+    healthcheck:
+      <<: *healthcheck-hello
+      # Il workspace dedicato al watch non ha /hello: la rotta di riferimento è /watched.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/watched"]
+    environment:
+      BACKEND_URL: "http://backend:9000"
+      MOCKS_DIR: "/workspace/mocks"
+      FILES_DIR: "/workspace/files"
+      CHOKIDAR_USEPOLLING: "true"
+      ADMIN_API_ENABLED: "false"
+    ports:
+      - "8070:3000"
+    volumes:
+      - ./workspace-watch/mocks:/workspace/mocks
+
+  backend:
+    image: node:24-alpine
+    command: ["node", "/srv/server.js"]
+    volumes:
+      - ./backend:/srv:ro
+    ports:
+      - "9090:9000"
+
+  client:
+    image: nginx:alpine
+    healthcheck:
+      <<: *healthcheck-hello
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/"]
+    volumes:
+      - ./client:/usr/share/nginx/html:ro
+    ports:
+      - "8081:80"

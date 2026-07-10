@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <title>Client dei test esterni di Mockxy</title>
+</head>
+<body>
+  <h1>Client dei test esterni di Mockxy</h1>
+  <p>
+    Pagina minimale servita da un'origin diversa da Mockxy: le chiamate partono da qui,
+    così il browser applica per davvero CORS, preflight, credenziali e cookie.
+    Viene pilotata da Playwright; non c'è interfaccia.
+  </p>
+  <script>
+    // Esegue una fetch e restituisce un esito serializzabile per page.evaluate.
+    // Gli errori CORS arrivano come TypeError opaco: li riportiamo come { blocked: true }.
+    window.callApi = async function callApi(url, options = {}) {
+      try {
+        const response = await fetch(url, options);
+        const headers = {};
+        // Cross-origin il JS legge solo gli header safelisted + quelli in Expose-Headers:
+        // riportiamo quelli che i test vogliono osservare.
+        for (const name of ["x-mock-source", "x-total-count", "content-type", "x-custom-options"]) {
+          const value = response.headers.get(name);
+          if (value !== null) {
+            headers[name] = value;
+          }
+        }
+        let body = null;
+        const text = await response.text();
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = text;
+        }
+        return {
+          blocked: false,
+          status: response.status,
+          ok: response.ok,
+          redirected: response.redirected,
+          url: response.url,
+          headers,
+          body,
+        };
+      } catch (error) {
+        return { blocked: true, errorName: error.name, errorMessage: error.message };
+      }
+    };
+
+    // Giro completo su un WebSocket echo: apre, aspetta il saluto del server, manda un
+    // messaggio, aspetta l'eco e chiude con codice/reason espliciti. Restituisce la
+    // trascrizione serializzabile; il timeout evita che un tunnel muto blocchi il test.
+    window.wsRoundTrip = function wsRoundTrip(url, message, closeCode, closeReason) {
+      return new Promise((resolve) => {
+        const transcript = {
+          opened: false,
+          received: [],
+          closeCode: null,
+          closeReason: null,
+          closeWasClean: null,
+          error: false,
+          timedOut: false,
+        };
+        const socket = new WebSocket(url);
+        const timer = setTimeout(() => {
+          transcript.timedOut = true;
+          try { socket.close(); } catch { /* già chiuso */ }
+          resolve(transcript);
+        }, 8000);
+        socket.onopen = () => {
+          transcript.opened = true;
+          socket.send(message);
+        };
+        socket.onmessage = (event) => {
+          transcript.received.push(event.data);
+          if (transcript.received.length === 2) {
+            socket.close(closeCode, closeReason);
+          }
+        };
+        socket.onerror = () => {
+          transcript.error = true;
+        };
+        socket.onclose = (event) => {
+          clearTimeout(timer);
+          transcript.closeCode = event.code;
+          transcript.closeReason = event.reason;
+          transcript.closeWasClean = event.wasClean;
+          resolve(transcript);
+        };
+      });
+    };
+
+    // Raccoglie expectedCount eventi da un flusso SSE, annotando QUANDO ciascuno arriva:
+    // i timestamp distinguono una consegna progressiva da un buffering fino alla chiusura.
+    window.sseCollect = function sseCollect(url, expectedCount) {
+      return new Promise((resolve) => {
+        const events = [];
+        const source = new EventSource(url);
+        const finish = (timedOut) => {
+          source.close();
+          resolve({ events, timedOut });
+        };
+        const timer = setTimeout(() => finish(true), 8000);
+        source.onmessage = (event) => {
+          events.push({ data: event.data, atMs: Date.now() });
+          if (events.length >= expectedCount) {
+            clearTimeout(timer);
+            finish(false);
+          }
+        };
+        source.onerror = () => {
+          // onerror scatta anche alla fine del flusso: è un fallimento solo se mancano eventi.
+          if (events.length >= expectedCount) {
+            clearTimeout(timer);
+            finish(false);
+          }
+        };
+      });
+    };
+
+    // Scarica una risorsa binaria e ne riporta dimensione e primi byte (per la firma del formato).
+    window.fetchBinary = async function fetchBinary(url) {
+      try {
+        const response = await fetch(url);
+        const buffer = await response.arrayBuffer();
+        return {
+          blocked: false,
+          status: response.status,
+          contentType: response.headers.get("content-type"),
+          byteLength: buffer.byteLength,
+          firstBytes: Array.from(new Uint8Array(buffer.slice(0, 8))),
+        };
+      } catch (error) {
+        return { blocked: true, errorName: error.name, errorMessage: error.message };
+      }
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/watched",
+  "description": "Mock del test di hot reload: la sua response viene riscritta dal test",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

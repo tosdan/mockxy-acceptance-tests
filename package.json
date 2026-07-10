@@ -1,0 +1,16 @@
+{
+  "name": "mockxy-external-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Test black-box di Mockxy dall'esterno: immagine Docker standalone + browser reale (Playwright) nella topologia client → Mockxy → backend",
+  "scripts": {
+    "stack:up": "docker compose up -d --build",
+    "stack:down": "docker compose down",
+    "stack:logs": "docker compose logs -f",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

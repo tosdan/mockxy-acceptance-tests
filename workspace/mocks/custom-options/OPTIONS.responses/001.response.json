@@ -1,0 +1,12 @@
+{
+  "type": "mock",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-custom-options": "explicit-mock"
+  },
+  "delayMs": 0,
+  "body": {
+    "customOptions": true
+  }
+}

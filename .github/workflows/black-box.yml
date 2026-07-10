@@ -1,0 +1,94 @@
+# CI dei test esterni black-box: costruisce l'immagine standalone del motore dal ref
+# indicato (default: main) e ci lancia contro la suite Playwright su browser reale.
+# Ogni run verde certifica la coppia «motore @ ref × questa suite @ commit corrente».
+name: black-box
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      engine-ref:
+        description: "Ref di mock-server-v1 da testare (branch, tag o SHA)"
+        required: false
+        default: "main"
+
+jobs:
+  black-box:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # I due repo affiancati: il compose costruisce da ../mock-server.
+      - name: Checkout della suite
+        uses: actions/checkout@v4
+        with:
+          path: mock-server-external-tests
+
+      - name: Checkout del motore
+        uses: actions/checkout@v4
+        with:
+          repository: tosdan/mockxy
+          ref: ${{ inputs.engine-ref || 'main' }}
+          # Se il repo del motore è privato serve un fine-grained PAT (contents: read)
+          # salvato come secret ENGINE_REPO_TOKEN; se è pubblico basta il token di default.
+          token: ${{ secrets.ENGINE_REPO_TOKEN || github.token }}
+          path: mock-server
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mock-server-external-tests/package-lock.json
+
+      # I browser Playwright pesano ~350-400 MB: cache con chiave sul lockfile (che pinna
+      # la versione di Playwright). Su cache hit restano solo le dipendenze di sistema.
+      - name: Cache dei browser Playwright
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('mock-server-external-tests/package-lock.json') }}
+
+      - name: Installa la suite
+        working-directory: mock-server-external-tests
+        run: npm ci
+
+      - name: Installa i browser Playwright
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: mock-server-external-tests
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Dipendenze di sistema dei browser (cache già calda)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: mock-server-external-tests
+        run: npx playwright install-deps chromium firefox webkit
+
+      # L'attesa vive negli healthcheck del compose, accanto alla topologia: una nuova
+      # istanza aggiunta allo stack porta con sé il proprio criterio di prontezza.
+      - name: Avvia lo stack e attendi che sia sano
+        working-directory: mock-server-external-tests
+        run: docker compose up -d --build --wait --wait-timeout 90
+
+      - name: Esegui i test
+        working-directory: mock-server-external-tests
+        run: npm test
+
+      - name: Log dei container (solo su fallimento)
+        if: failure()
+        working-directory: mock-server-external-tests
+        run: docker compose logs --no-color
+
+      - name: Report Playwright (solo su fallimento)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: mock-server-external-tests/test-results/
+          if-no-files-found: ignore
+
+      - name: Spegni lo stack
+        if: always()
+        working-directory: mock-server-external-tests
+        run: docker compose down

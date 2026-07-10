@@ -1,0 +1,9 @@
+{
+  "type": "mock",
+  "status": 200,
+  "headers": {
+    "content-type": "image/png"
+  },
+  "delayMs": 0,
+  "file": "001.file.png"
+}

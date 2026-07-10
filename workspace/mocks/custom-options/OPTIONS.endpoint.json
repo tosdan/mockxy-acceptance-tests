@@ -1,0 +1,8 @@
+{
+  "method": "OPTIONS",
+  "path": "/custom-options",
+  "description": "Mock OPTIONS esplicito: deve avere la precedenza sul preflight automatico (e quindi, senza header CORS, far bloccare dal browser la richiesta preflighted)",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}
