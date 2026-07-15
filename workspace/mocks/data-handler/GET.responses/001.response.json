@@ -1,0 +1,5 @@
+{
+  "type": "handler",
+  "title": "Serve il file dati mydata.json",
+  "sourceFile": "001.handler.js"
+}
