@@ -1,5 +1,5 @@
 # Stack dei test esterni black-box di Mockxy: esercita l'IMMAGINE standalone vera
-# (build da ../mock-server) nella topologia reale «browser → Mockxy → backend».
+# (build da ../mockxy) nella topologia reale «browser → Mockxy → backend».
 #
 #   client (nginx, :8081)  ──origin diversa──▶  mockxy (:8080, CORS attivo)
 #                                                  │ proxy fallback
@@ -23,7 +23,7 @@ x-healthcheck-hello: &healthcheck-hello
 services:
   mockxy:
     build:
-      context: ../mock-server
+      context: ../mockxy
       dockerfile: Dockerfile.standalone
     image: mockxy-standalone-under-test
     depends_on:
@@ -113,7 +113,7 @@ services:
   # Il workspace è dedicato e scrivibile: il test lo modifica davvero.
   mockxy-dev:
     build:
-      context: ../mock-server
+      context: ../mockxy
       dockerfile: Dockerfile
     image: mockxy-dev-under-test
     depends_on:

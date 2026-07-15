@@ -1,7 +1,7 @@
 # Test esterni black-box di Mockxy
 
 Suite di test **di sistema** che esercita Mockxy dall'esterno, come lo vede un consumatore
-reale: l'**immagine Docker standalone** (costruita da `../mock-server`, non una copia del
+reale: l'**immagine Docker standalone** (costruita da `../mockxy`, non una copia del
 codice) nella topologia completa «browser → Mockxy → backend», con un **browser vero**
 (Playwright/Chromium) come client.
 
@@ -77,7 +77,7 @@ stato condiviso mentre i project girano in parallelo. Per il primo run:
 (`retries: 1` solo con `CI` impostata); in locale la flakiness resta visibile.
 
 **Nota di versioning**: la suite testa l'immagine costruita dal checkout corrente di
-`../mock-server`. Dopo modifiche al motore serve `npm run stack:up` (ri-build) per testare la
+`../mockxy`. Dopo modifiche al motore serve `npm run stack:up` (ri-build) per testare la
 versione nuova; annotare nei commit di questo repo contro quale commit del motore si è verde.
 
 ## CI
@@ -89,13 +89,13 @@ suite @ commit». Con **Run workflow** (dispatch manuale) si può puntare un ref
 motore — un tag, un branch di lavoro, uno SHA.
 
 Se il repo del motore è **privato**, il checkout cross-repo richiede un fine-grained PAT con
-permesso `contents: read` su `mock-server-v1`, salvato nei secrets di questo repo come
+permesso `contents: read` su `mockxy`, salvato nei secrets di questo repo come
 `ENGINE_REPO_TOKEN`. Se è pubblico non serve nulla.
 
 Su fallimento il workflow allega i log dei container e il report Playwright come artifact.
 
 Esiste anche il **workflow speculare nel repo del motore** (`acceptance` in
-`mock-server-v1`): a ogni push sul motore lancia questa suite (al suo `master`, o al ref
+`mockxy`): a ogni push sul motore lancia questa suite (al suo `master`, o al ref
 scelto col dispatch) contro quel commit. I due workflow sono gemelli con il pinning
 invertito: qui è fisso il commit della suite e si sceglie il motore, lì il contrario.
 
