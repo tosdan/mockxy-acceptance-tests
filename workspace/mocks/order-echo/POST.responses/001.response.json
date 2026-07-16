@@ -1,0 +1,16 @@
+{
+  "type": "mock",
+  "status": 201,
+  "templated": true,
+  "headers": {
+    "content-type": "application/json",
+    "location": "/order-echo/{{body.ordine.codice}}"
+  },
+  "delayMs": 0,
+  "body": {
+    "codice": "{{body.ordine.codice}}",
+    "quantita": "{{body.ordine.quantita | number}}",
+    "righe": "{{body.ordine.righe | json}}",
+    "ricevuto": true
+  }
+}

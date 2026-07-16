@@ -1,0 +1,11 @@
+{
+  "type": "sse",
+  "title": "Copione di avanzamento",
+  "retryMs": 3000,
+  "script": [
+    { "afterMs": 0, "data": "uno" },
+    { "afterMs": 500, "data": "due" },
+    { "afterMs": 1000, "data": "tre" }
+  ],
+  "onEnd": "keep-open"
+}

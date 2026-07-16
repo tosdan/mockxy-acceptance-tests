@@ -1,0 +1,9 @@
+{
+  "type": "sse",
+  "title": "Endpoint muto per la console",
+  "script": [],
+  "onEnd": "keep-open",
+  "presets": [
+    { "label": "Notifica", "event": "notice", "data": { "message": "ciao" } }
+  ]
+}

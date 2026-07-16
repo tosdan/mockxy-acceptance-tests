@@ -1,0 +1,8 @@
+{
+  "method": "POST",
+  "path": "/order-echo",
+  "description": "Templating: placeholder dal body JSON della richiesta (percorso a punti e filtro json)",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

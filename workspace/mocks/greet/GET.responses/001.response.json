@@ -1,0 +1,19 @@
+{
+  "type": "mock",
+  "status": 200,
+  "templated": true,
+  "headers": {
+    "content-type": "application/json",
+    "x-greeted-id": "{{params.id}}"
+  },
+  "delayMs": 0,
+  "body": {
+    "id": "{{params.id | number}}",
+    "nome": "Utente {{params.id}}",
+    "lingua": "{{query.lang}}",
+    "clientHeader": "{{headers.x-client-tag}}",
+    "richiestoAlle": "{{now}}",
+    "campoInesistente": "{{query.non-esiste}}",
+    "letterale": "\\{{non-sono-un-placeholder}}"
+  }
+}

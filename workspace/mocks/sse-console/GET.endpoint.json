@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/sse-console",
+  "description": "Mock SSE muto: nessun copione, alimentato solo dal push della console",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}
