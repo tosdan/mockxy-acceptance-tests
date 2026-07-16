@@ -11,6 +11,11 @@
     così il browser applica per davvero CORS, preflight, credenziali e cookie.
     Viene pilotata da Playwright; non c'è interfaccia.
   </p>
+  <p>
+    Per le prove manuali (a stack su) ci sono due micro app autocontenute:
+    il <a href="ws-tester.html">tester dei mock WebSocket</a> e
+    il <a href="sse-tester.html">tester dei mock SSE</a>.
+  </p>
   <script>
     // Esegue una fetch e restituisce un esito serializzabile per page.evaluate.
     // Gli errori CORS arrivano come TypeError opaco: li riportiamo come { blocked: true }.
@@ -88,6 +93,76 @@
           resolve(transcript);
         };
       });
+    };
+
+    // Raccoglie messaggi da una WebSocket annotando QUANDO ciascuno arriva (i timestamp
+    // distinguono una consegna progressiva da un buffering). Risolve al raggiungimento di
+    // expectedCount (e chiude lato client) oppure quando chiude il SERVER — expectedCount
+    // null serve ai copioni con onEnd close: si resta in ascolto fino al frame di chiusura.
+    window.wsCollect = function wsCollect(url, expectedCount, timeoutMs = 8000) {
+      return new Promise((resolve) => {
+        const result = {
+          opened: false,
+          messages: [],
+          closeCode: null,
+          closeReason: null,
+          closeWasClean: null,
+          timedOut: false,
+        };
+        const socket = new WebSocket(url);
+        const timer = setTimeout(() => {
+          result.timedOut = true;
+          try { socket.close(); } catch { /* già chiuso */ }
+          resolve(result);
+        }, timeoutMs);
+        socket.onopen = () => {
+          result.opened = true;
+        };
+        socket.onmessage = (event) => {
+          result.messages.push({ data: event.data, atMs: Date.now() });
+          if (expectedCount != null && result.messages.length >= expectedCount) {
+            socket.close();
+          }
+        };
+        socket.onclose = (event) => {
+          clearTimeout(timer);
+          result.closeCode = event.code;
+          result.closeReason = event.reason;
+          result.closeWasClean = event.wasClean;
+          resolve(result);
+        };
+      });
+    };
+
+    // WebSocket NOMINATE per i test a più connessioni (es. una regola risponde solo a chi
+    // ha parlato): si apre con wsOpen, si parla con wsSend, si legge il ricevuto con
+    // wsReceived e si chiude con wsCloseAll. Lo stato vive nella pagina tra le evaluate.
+    window.__wsSockets = {};
+    window.wsOpen = function wsOpen(name, url) {
+      return new Promise((resolve) => {
+        const socket = new WebSocket(url);
+        window.__wsSockets[name] = { socket, received: [] };
+        const timer = setTimeout(() => resolve({ opened: false }), 8000);
+        socket.onopen = () => {
+          clearTimeout(timer);
+          resolve({ opened: true });
+        };
+        socket.onmessage = (event) => {
+          window.__wsSockets[name].received.push({ data: event.data, atMs: Date.now() });
+        };
+      });
+    };
+    window.wsSend = function wsSend(name, text) {
+      window.__wsSockets[name].socket.send(text);
+    };
+    window.wsReceived = function wsReceived(name) {
+      return window.__wsSockets[name].received;
+    };
+    window.wsCloseAll = function wsCloseAll() {
+      for (const entry of Object.values(window.__wsSockets)) {
+        try { entry.socket.close(); } catch { /* già chiuso */ }
+      }
+      window.__wsSockets = {};
     };
 
     // Raccoglie expectedCount eventi da un flusso SSE, annotando QUANDO ciascuno arriva:
