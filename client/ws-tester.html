@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tester manuale · mock WebSocket</title>
+  <style>
+    :root {
+      --bg: #10141a; --panel: #1a2029; --border: #2c3540; --text: #d7dee8;
+      --muted: #8593a3; --accent: #4fc3f7; --sent: #ffb74d; --recv: #81c784; --err: #e57373;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 1.5rem; background: var(--bg); color: var(--text);
+           font: 15px/1.5 system-ui, sans-serif; max-width: 900px; margin-inline: auto; }
+    h1 { font-size: 1.2rem; margin: 0 0 .25rem; }
+    h1 small { color: var(--muted); font-weight: normal; }
+    p.hint { color: var(--muted); margin: 0 0 1rem; font-size: .85rem; }
+    fieldset { border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+               margin: 0 0 1rem; padding: .75rem 1rem; }
+    legend { color: var(--muted); font-size: .8rem; padding: 0 .4rem; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    input[type=text] { flex: 1; min-width: 240px; background: var(--bg); color: var(--text);
+                       border: 1px solid var(--border); border-radius: 6px; padding: .45rem .6rem;
+                       font: 13px/1.4 ui-monospace, monospace; }
+    button { background: var(--border); color: var(--text); border: 0; border-radius: 6px;
+             padding: .45rem .9rem; cursor: pointer; font-size: .85rem; }
+    button:hover:not(:disabled) { filter: brightness(1.25); }
+    button:disabled { opacity: .4; cursor: default; }
+    button.primary { background: var(--accent); color: #06222e; font-weight: 600; }
+    #status { font-size: .85rem; padding: .15rem .6rem; border-radius: 999px;
+              border: 1px solid var(--border); color: var(--muted); }
+    #status.open { color: var(--recv); border-color: var(--recv); }
+    #status.error { color: var(--err); border-color: var(--err); }
+    #log { list-style: none; margin: 0; padding: .5rem; min-height: 12rem; max-height: 24rem;
+           overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+           border-radius: 6px; font: 13px/1.6 ui-monospace, monospace; }
+    #log li { display: flex; gap: .6rem; align-items: baseline; }
+    #log .t { color: var(--muted); flex: none; }
+    #log .dir { flex: none; width: 1em; }
+    #log li.sent .dir { color: var(--sent); }
+    #log li.recv .dir { color: var(--recv); }
+    #log li.info { color: var(--muted); font-style: italic; }
+    #log li.error { color: var(--err); }
+    #log .data { white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Tester mock WebSocket <small>· prove manuali contro Mockxy</small></h1>
+  <p class="hint">
+    Pagina autocontenuta: apre una WebSocket vera verso il mock, mostra il transcript nei due
+    versi e permette di parlare al canale (le regole rispondono solo a questa connessione;
+    i push della console arrivano in broadcast). Endpoint del workspace: <code>/ws-script</code>,
+    <code>/ws-rules</code>, <code>/ws-close</code>, <code>/ws-console</code>.
+  </p>
+
+  <fieldset>
+    <legend>Connessione</legend>
+    <div class="row">
+      <input id="url" type="text" value="ws://localhost:8080/ws-rules" spellcheck="false">
+      <button id="connect" class="primary">Connetti</button>
+      <button id="disconnect" disabled>Chiudi</button>
+      <span id="status">disconnesso</span>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Invia un messaggio</legend>
+    <div class="row">
+      <input id="message" type="text" placeholder='es. ping · oppure {"azione":"subscribe"}' spellcheck="false" disabled>
+      <button id="send" disabled>Invia ▶</button>
+      <button class="macro" data-payload="ping" disabled>ping</button>
+      <button class="macro" data-payload='{"azione":"subscribe","canale":"news"}' disabled>subscribe</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Transcript <button id="clear" style="float:right">pulisci</button></legend>
+    <ul id="log"></ul>
+  </fieldset>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let socket = null;
+
+    function logLine(kind, dir, text) {
+      const li = document.createElement("li");
+      li.className = kind;
+      const time = new Date().toLocaleTimeString("it-IT", { hour12: false }) +
+        "." + String(Date.now() % 1000).padStart(3, "0");
+      li.innerHTML = '<span class="t"></span><span class="dir"></span><span class="data"></span>';
+      li.querySelector(".t").textContent = time;
+      li.querySelector(".dir").textContent = dir;
+      li.querySelector(".data").textContent = text;
+      $("log").appendChild(li);
+      $("log").scrollTop = $("log").scrollHeight;
+    }
+
+    function setConnected(connected) {
+      $("connect").disabled = connected;
+      $("disconnect").disabled = !connected;
+      $("send").disabled = !connected;
+      $("message").disabled = !connected;
+      for (const macro of document.querySelectorAll(".macro")) macro.disabled = !connected;
+      $("status").className = connected ? "open" : "";
+      if (!connected && $("status").textContent === "connesso") $("status").textContent = "disconnesso";
+    }
+
+    $("connect").onclick = () => {
+      const url = $("url").value.trim();
+      logLine("info", "·", `connessione a ${url}…`);
+      try {
+        socket = new WebSocket(url);
+      } catch (error) {
+        logLine("error", "✕", `URL non valido: ${error.message}`);
+        return;
+      }
+      socket.onopen = () => {
+        $("status").textContent = "connesso";
+        setConnected(true);
+        logLine("info", "·", "connessione aperta (se il mock ha un copione, parte ora)");
+      };
+      socket.onmessage = (event) => logLine("recv", "◀", event.data);
+      socket.onerror = () => {
+        $("status").textContent = "errore";
+        $("status").className = "error";
+        logLine("error", "✕", "errore di connessione (endpoint ws giusto? stack su?)");
+      };
+      socket.onclose = (event) => {
+        setConnected(false);
+        logLine("info", "·", `chiusa · code ${event.code}` +
+          (event.reason ? ` · reason "${event.reason}"` : "") +
+          (event.wasClean ? " · pulita" : " · NON pulita"));
+        socket = null;
+      };
+    };
+
+    $("disconnect").onclick = () => socket?.close(1000, "chiusura manuale dal tester");
+
+    function send(payload) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      socket.send(payload);
+      logLine("sent", "▶", payload);
+    }
+    $("send").onclick = () => {
+      const text = $("message").value;
+      if (text !== "") { send(text); $("message").value = ""; }
+    };
+    $("message").onkeydown = (event) => { if (event.key === "Enter") $("send").click(); };
+    for (const macro of document.querySelectorAll(".macro")) {
+      macro.onclick = () => send(macro.dataset.payload);
+    }
+    $("clear").onclick = (event) => { event.preventDefault(); $("log").innerHTML = ""; };
+  </script>
+</body>
+</html>
