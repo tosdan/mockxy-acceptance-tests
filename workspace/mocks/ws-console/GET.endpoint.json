@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/ws-console",
+  "description": "Mock WebSocket muto per la regia manuale della console (push via admin API)",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

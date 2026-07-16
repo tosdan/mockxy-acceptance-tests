@@ -1,0 +1,16 @@
+{
+  "type": "ws",
+  "title": "Regole di risposta",
+  "script": [],
+  "onEnd": "keep-open",
+  "rules": [
+    { "match": { "equals": "ping" }, "reply": [{ "afterMs": 0, "data": "pong" }] },
+    {
+      "match": { "json": { "azione": "subscribe" } },
+      "reply": [
+        { "afterMs": 0, "data": { "esito": "ok" } },
+        { "afterMs": 200, "data": { "tipo": "aggiornamento", "n": 1 } }
+      ]
+    }
+  ]
+}

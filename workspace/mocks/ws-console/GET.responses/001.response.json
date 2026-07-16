@@ -1,0 +1,9 @@
+{
+  "type": "ws",
+  "title": "Endpoint muto per la console",
+  "script": [],
+  "onEnd": "keep-open",
+  "presets": [
+    { "label": "Notifica", "data": { "message": "ciao" } }
+  ]
+}

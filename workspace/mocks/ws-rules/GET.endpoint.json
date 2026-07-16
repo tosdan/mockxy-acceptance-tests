@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/ws-rules",
+  "description": "Mock WebSocket muto con regole di risposta: equals, json-subset; nessun eco di default",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}
