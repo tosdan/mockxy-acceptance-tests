@@ -1,0 +1,9 @@
+{
+  "type": "sse",
+  "title": "Un evento e chiusura dal server",
+  "retryMs": 500,
+  "script": [
+    { "afterMs": 0, "data": "giro" }
+  ],
+  "onEnd": "close"
+}

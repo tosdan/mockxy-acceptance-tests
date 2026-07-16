@@ -1,0 +1,16 @@
+{
+  "method": "GET",
+  "path": "/phase",
+  "description": "Sequenza con criterio forMs e onEnd loop: fase uno a tempo, fase due per una richiesta, poi da capo",
+  "enabled": true,
+  "responseFiles": ["001.response.json", "002.response.json"],
+  "selectedResponseFile": "001.response.json",
+  "sequence": {
+    "enabled": true,
+    "steps": [
+      { "response": "001.response.json", "forMs": 700 },
+      { "response": "002.response.json", "times": 1 }
+    ],
+    "onEnd": "loop"
+  }
+}

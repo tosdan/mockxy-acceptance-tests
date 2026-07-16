@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/sse-named",
+  "description": "Mock SSE con eventi nominati (event/id del protocollo): visibili solo via addEventListener",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

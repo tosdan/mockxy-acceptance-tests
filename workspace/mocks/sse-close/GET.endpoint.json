@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/sse-close",
+  "description": "Mock SSE con onEnd close: il server chiude e il client riconnette secondo retryMs",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

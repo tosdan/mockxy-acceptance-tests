@@ -1,0 +1,10 @@
+{
+  "type": "sse",
+  "title": "Avanzamento con eventi nominati",
+  "script": [
+    { "afterMs": 0, "event": "progress", "id": "1", "data": { "percent": 10 } },
+    { "afterMs": 300, "event": "progress", "id": "2", "data": { "percent": 100 } },
+    { "afterMs": 300, "event": "done", "data": "fine" }
+  ],
+  "onEnd": "keep-open"
+}

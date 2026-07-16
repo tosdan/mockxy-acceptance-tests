@@ -1,0 +1,11 @@
+{
+  "type": "mock",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "delayMs": 0,
+  "body": {
+    "phase": "uno"
+  }
+}

@@ -80,4 +80,29 @@ test.describe("sequenza di varianti attraverso il container", () => {
     // ...e il cursore runtime è esposto accanto (azzerato dal beforeEach).
     expect(detail.sequenceState).toBeTruthy();
   });
+
+  test("il criterio forMs avanza a tempo e onEnd loop riparte dal primo step", async ({ request }) => {
+    // /phase: step 1 "uno" per 700ms DALLA SUA PRIMA RICHIESTA, step 2 "due" per una
+    // richiesta, onEnd loop. Endpoint dedicato: il timing non deve dipendere da /job-status.
+    const phaseId = await mockIdForPath(request, "/phase");
+    await resetSequence(request, phaseId);
+
+    const phase = async () => {
+      const response = await request.get(`${stack.mockxyBaseUrl}/phase`);
+      expect(response.status()).toBe(200);
+      return (await response.json()).phase;
+    };
+
+    // Il timer parte dalla prima richiesta, non dal reset: due richieste ravvicinate
+    // cadono entrambe nella finestra dei 700ms.
+    expect(await phase()).toBe("uno");
+    expect(await phase()).toBe("uno");
+
+    // Scaduta la finestra, la richiesta successiva è servita dallo step 2...
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(await phase()).toBe("due");
+
+    // ...che con times=1 si esaurisce subito: onEnd loop riporta allo step 1.
+    expect(await phase()).toBe("uno");
+  });
 });

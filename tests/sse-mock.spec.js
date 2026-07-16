@@ -48,6 +48,46 @@ test.describe("mock SSE con copione", () => {
     expect(secondRun.timedOut).toBe(false);
     expect(secondRun.events[0].data).toBe("uno");
   });
+
+  test("gli eventi nominati arrivano ai listener per tipo, con id del protocollo", async ({ page }) => {
+    await page.goto("/");
+
+    // onmessage NON vede gli eventi con "event:": il browser li smista solo ai listener
+    // registrati per tipo — è il percorso che il copione di /sse-named esercita.
+    const result = await page.evaluate(
+      (url) => window.sseCollectNamed(url, ["progress", "done"], 3),
+      `${stack.mockxyBaseUrl}/sse-named`
+    );
+
+    expect(result.timedOut).toBe(false);
+    expect(result.events.map((event) => event.type)).toEqual(["progress", "progress", "done"]);
+    // data JSON viene serializzato, data stringa esce sul filo così com'è.
+    expect(JSON.parse(result.events[0].data)).toEqual({ percent: 10 });
+    expect(JSON.parse(result.events[1].data)).toEqual({ percent: 100 });
+    expect(result.events[2].data).toBe("fine");
+    // Il campo id: del protocollo diventa lastEventId e resta appiccicato agli eventi
+    // successivi che non lo ridichiarano.
+    expect(result.events.map((event) => event.lastEventId)).toEqual(["1", "2", "2"]);
+  });
+
+  test("con onEnd close il server chiude e EventSource riconnette ripartendo dal copione", async ({ page }) => {
+    await page.goto("/");
+
+    // /sse-close: un solo evento e chiusura dal server (retryMs 500). EventSource
+    // riconnette da solo e il copione riparte: due "giro" sulla stessa EventSource
+    // sono la prova che chiusura e retry hanno round-trippato fino al browser.
+    const result = await page.evaluate(
+      (url) => window.sseCollect(url, 2),
+      `${stack.mockxyBaseUrl}/sse-close`
+    );
+
+    expect(result.timedOut).toBe(false);
+    expect(result.events.map((event) => event.data)).toEqual(["giro", "giro"]);
+    // Tra i due c'è almeno l'attesa di riconnessione: se il server non chiudesse
+    // (o il client non riconnettesse) il secondo evento non arriverebbe affatto.
+    const gapMs = result.events[1].atMs - result.events[0].atMs;
+    expect(gapMs).toBeGreaterThanOrEqual(300);
+  });
 });
 
 // La console SSE fa broadcast a TUTTE le connessioni aperte dell'endpoint: il test gira
