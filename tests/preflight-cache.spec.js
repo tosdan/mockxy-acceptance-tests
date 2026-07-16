@@ -7,8 +7,10 @@ const COMPOSE_DIR = path.join(__dirname, "..");
 
 // Ricrea l'istanza commutabile con il CORS nello stato richiesto (vedi docker-compose.yml:
 // CORS_ENABLED legge TOGGLE_CORS_ENABLED). Compose ricrea il container solo se l'env cambia.
+// --no-deps: il compose non deve nemmeno GUARDARE le istanze condivise (mockxy, backend)
+// mentre gli altri test le stanno usando.
 function setToggleCors(enabled) {
-  execSync("docker compose up -d mockxy-toggle", {
+  execSync("docker compose up -d --no-deps mockxy-toggle", {
     cwd: COMPOSE_DIR,
     env: { ...process.env, TOGGLE_CORS_ENABLED: String(enabled) },
     stdio: "ignore",
@@ -67,12 +69,9 @@ function postTrackedFromPage(page) {
 // (risposta poi bloccata, ma il backend la riceve); senza cache il preflight fallisce e
 // la POST non lascia mai il browser.
 test.describe("cache dei preflight", () => {
-  // Test stateful (ricrea il container commutabile e usa il contatore condiviso del
-  // backend): gira una volta sola, i project corrono in parallelo.
-  test.skip(
-    ({ browserName }) => browserName !== "chromium",
-    "stateful: una sola esecuzione (project chromium)"
-  );
+  // Test che ricrea un container: gira nel project dedicato chromium-stack-mutating, DOPO
+  // tutti gli altri e mai in concorrenza (vedi playwright.config.js) — la ricreazione può
+  // resettare connessioni verso le altre istanze pubblicate.
 
   test("a CORS spento un preflight in cache fa ancora partire la richiesta, uno nuovo no", async ({
     page,
