@@ -1,0 +1,16 @@
+{
+  "method": "GET",
+  "path": "/job-status",
+  "description": "Sequenza di varianti: due risposte processing, poi completed (stato terminale)",
+  "enabled": true,
+  "responseFiles": ["001.response.json", "002.response.json"],
+  "selectedResponseFile": "001.response.json",
+  "sequence": {
+    "enabled": true,
+    "steps": [
+      { "response": "001.response.json", "times": 2 },
+      { "response": "002.response.json" }
+    ],
+    "onEnd": "stay"
+  }
+}

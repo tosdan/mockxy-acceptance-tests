@@ -118,6 +118,30 @@
       });
     };
 
+    // Come sseCollect, ma per gli EVENTI NOMINATI: onmessage non li vede, servono i
+    // listener per tipo (addEventListener) — il percorso API che i copioni con "event:"
+    // esercitano davvero. Registra tipo, payload e lastEventId di ogni evento raccolto.
+    window.sseCollectNamed = function sseCollectNamed(url, eventNames, expectedCount) {
+      return new Promise((resolve) => {
+        const events = [];
+        const source = new EventSource(url);
+        const finish = (timedOut) => {
+          source.close();
+          resolve({ events, timedOut });
+        };
+        const timer = setTimeout(() => finish(true), 8000);
+        for (const name of eventNames) {
+          source.addEventListener(name, (event) => {
+            events.push({ type: event.type, data: event.data, lastEventId: event.lastEventId });
+            if (events.length >= expectedCount) {
+              clearTimeout(timer);
+              finish(false);
+            }
+          });
+        }
+      });
+    };
+
     // Scarica una risorsa binaria e ne riporta dimensione e primi byte (per la firma del formato).
     window.fetchBinary = async function fetchBinary(url) {
       try {

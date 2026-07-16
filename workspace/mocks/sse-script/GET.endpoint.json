@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/sse-script",
+  "description": "Mock SSE con copione: tre eventi cadenzati, poi la connessione resta aperta",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

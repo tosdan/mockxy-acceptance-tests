@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/greet/:id",
+  "description": "Templating: placeholder da params, query, header e helper generati",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}
