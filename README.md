@@ -50,11 +50,8 @@ L'istanza principale espone anche l'**admin API** (`ADMIN_API_ENABLED=true` +
   cose che Mockxy deve sovrascrivere, adattare e riscrivere.
 - La **pagina client** (`client/index.html`) è il minimo indispensabile: un helper `callApi`
   che riporta esito, header leggibili e body — o `blocked: true` quando il browser rifiuta —
-  più gli helper WebSocket/SSE usati dai test. Accanto ci sono due micro app autocontenute
-  per le **prove manuali** a stack su: `http://localhost:8081/ws-tester.html` (connessione,
-  transcript bidirezionale e composer verso i mock WebSocket) e
-  `http://localhost:8081/sse-tester.html` (EventSource con eventi nominati e log degli
-  eventi verso i mock SSE).
+  più gli helper WebSocket/SSE usati dai test. Accanto ci sono due micro app per le
+  [prove manuali](#prove-manuali-i-tester-websocket-e-sse) dei mock WebSocket e SSE.
 - I **mock di fixture** stanno in `workspace/mocks/` e arrivano al container via bind mount
   read-only, come nell'uso documentato dell'immagine standalone.
 
@@ -84,6 +81,38 @@ stato condiviso mentre i project girano in parallelo. Per il primo run:
 **Nota di versioning**: la suite testa l'immagine costruita dal checkout corrente di
 `../mockxy`. Dopo modifiche al motore serve `npm run stack:up` (ri-build) per testare la
 versione nuova; annotare nei commit di questo repo contro quale commit del motore si è verde.
+
+## Prove manuali: i tester WebSocket e SSE
+
+Oltre alla suite automatica, il container nginx del client serve due **micro app
+autocontenute** (un singolo file HTML ciascuna, zero dipendenze) per esplorare a mano i mock
+streaming di Mockxy — utili per provare un copione appena scritto, guardare le regole
+rispondere in diretta o fare da "pubblico" alla regia della console admin. Servono solo lo
+stack su (`npm run stack:up`) e un browser:
+
+- **<http://localhost:8081/ws-tester.html>** — apre una WebSocket vera verso l'URL indicato
+  (default `ws://localhost:8080/ws-rules`) e mostra il transcript nei due versi con
+  timestamp: ▶ quello che invii, ◀ quello che arriva dal mock. Il composer manda messaggi
+  liberi (Invio per spedire); le macro `ping` e `subscribe` esercitano le due regole della
+  fixture `/ws-rules`. Alla chiusura il log riporta codice, reason e se è stata pulita: con
+  `ws://localhost:8080/ws-close` si vede arrivare il `4001 "lavoro concluso"` del mock.
+  Connettendosi a `/ws-console` (endpoint muto) si riceve solo ciò che spinge la regia
+  manuale: l'immagine standalone non ha la UI, quindi qui si fa via admin API — l'`id` si
+  legge dal catalogo (`curl http://localhost:8080/_admin/api/mocks`) e poi
+  `curl -X POST http://localhost:8080/_admin/api/mocks/<id>/ws/push -H 'content-type: application/json' -d '{"data":{"message":"ciao"}}'`.
+- **<http://localhost:8081/sse-tester.html>** — apre una EventSource verso l'URL indicato
+  (default `http://localhost:8080/sse-script`) e logga gli eventi con tipo, payload e
+  `lastEventId`. Gli eventi con `event:` nominato arrivano solo ai listener registrati per
+  tipo: vanno elencati nel campo «eventi nominati» **prima** di connettersi (per
+  `/sse-named`: `progress, done`). Con `/sse-close` si osserva il giro completo di
+  chiusura dal server e riconnessione automatica di EventSource, annunciata nel log.
+
+Entrambe partono dall'origin `:8081`, la stessa dei test: le prove manuali attraversano la
+stessa topologia cross-origin della suite. Gli URL sono editabili, quindi si possono puntare
+anche le altre istanze dello stack o mock creati al volo via admin API — con un distinguo:
+l'EventSource è soggetta a CORS (contro l'istanza raw su `:8090` il browser la blocca), le
+WebSocket no (l'handshake `ws://` non passa dal CORS e funziona anche lì). Le pagine sono
+linkate anche da <http://localhost:8081/>.
 
 ## CI
 
@@ -115,6 +144,8 @@ invertito: qui è fisso il commit della suite e si sceglie il motore, lì il con
 | WebSocket (`websocket.spec.js`) | passthrough dell'upgrade dal browser: push server→client e eco client→server attraverso il tunnel, round-trip del codice di chiusura applicativo; controllo in diretta sul backend per isolare i guasti |
 | Mock WebSocket (`ws-mock.spec.js`) | mock ws con WebSocket vera del browser: copione consegnato progressivamente e che riparte a ogni connessione, regole di risposta (reply solo a chi ha parlato, match json-subset cadenzato, niente eco di default), `onEnd close` con codice/reason applicativi fino al browser, 426 sulla GET normale, push broadcast della console via admin API con transcript |
 | Mock SSE (`sse-mock.spec.js`) | mock sse con EventSource vera: copione progressivo che riparte a ogni connessione, eventi nominati con `lastEventId`, chiusura dal server e riconnessione automatica, push della console via admin API |
+| Sequenze (`sequences.spec.js`) | sequenza di varianti vista da fuori: step con `times`, stato terminale con `onEnd stay`, cursore runtime condiviso resettato via admin API (stateful ⇒ solo chromium, in serie) |
+| Templating (`templating.spec.js`) | mock statici con `templated: true` attraverso l'immagine standalone: placeholder da richiesta e header, filtri di tipo, helper `now`, sorgente mancante ⇒ stringa vuota, escape `\{{` |
 | Timeout (`timeouts.spec.js`) | 502 allo scadere di `REQUEST_TIMEOUT_MS` (senza aspettare il backend), risposta avviata mai troncata (il timeout copre solo fino ai primi header), backend lento ma entro il timeout servito normalmente |
 | File dati (`data-files.spec.js`) | handler che legge un file dati con `data()` servito al browser dall'immagine standalone: copre il ponte `FILES_DIR` + bind mount di `workspace/files`, invisibile ai test jest |
 | Contenuti (`content.spec.js`) | risposta gzip del backend integra al browser, mock file-backed binario byte-per-byte (firma PNG verificata anche dal browser), flusso SSE proxato consegnato progressivamente (timestamp distanziati ⇒ niente buffering) |
