@@ -49,7 +49,12 @@ L'istanza principale espone anche l'**admin API** (`ADMIN_API_ENABLED=true` +
   `SameSite=None`, redirect assoluti verso il proprio indirizzo interno. Sono esattamente le
   cose che Mockxy deve sovrascrivere, adattare e riscrivere.
 - La **pagina client** (`client/index.html`) è il minimo indispensabile: un helper `callApi`
-  che riporta esito, header leggibili e body — o `blocked: true` quando il browser rifiuta.
+  che riporta esito, header leggibili e body — o `blocked: true` quando il browser rifiuta —
+  più gli helper WebSocket/SSE usati dai test. Accanto ci sono due micro app autocontenute
+  per le **prove manuali** a stack su: `http://localhost:8081/ws-tester.html` (connessione,
+  transcript bidirezionale e composer verso i mock WebSocket) e
+  `http://localhost:8081/sse-tester.html` (EventSource con eventi nominati e log degli
+  eventi verso i mock SSE).
 - I **mock di fixture** stanno in `workspace/mocks/` e arrivano al container via bind mount
   read-only, come nell'uso documentato dell'immagine standalone.
 
@@ -108,6 +113,8 @@ invertito: qui è fisso il commit della suite e si sceglie il motore, lì il con
 | Cookie (`cookies.spec.js`) | login → cookie adattato → sessione che tiene; rimozione di `Domain`/`Secure`/`SameSite=None` e contrasto ad adattamento spento |
 | Redirect (`redirects.spec.js`) | riscrittura del `Location` assoluto (il browser resta su Mockxy), relativi e host terzi intatti, contrasto a riscrittura spenta |
 | WebSocket (`websocket.spec.js`) | passthrough dell'upgrade dal browser: push server→client e eco client→server attraverso il tunnel, round-trip del codice di chiusura applicativo; controllo in diretta sul backend per isolare i guasti |
+| Mock WebSocket (`ws-mock.spec.js`) | mock ws con WebSocket vera del browser: copione consegnato progressivamente e che riparte a ogni connessione, regole di risposta (reply solo a chi ha parlato, match json-subset cadenzato, niente eco di default), `onEnd close` con codice/reason applicativi fino al browser, 426 sulla GET normale, push broadcast della console via admin API con transcript |
+| Mock SSE (`sse-mock.spec.js`) | mock sse con EventSource vera: copione progressivo che riparte a ogni connessione, eventi nominati con `lastEventId`, chiusura dal server e riconnessione automatica, push della console via admin API |
 | Timeout (`timeouts.spec.js`) | 502 allo scadere di `REQUEST_TIMEOUT_MS` (senza aspettare il backend), risposta avviata mai troncata (il timeout copre solo fino ai primi header), backend lento ma entro il timeout servito normalmente |
 | File dati (`data-files.spec.js`) | handler che legge un file dati con `data()` servito al browser dall'immagine standalone: copre il ponte `FILES_DIR` + bind mount di `workspace/files`, invisibile ai test jest |
 | Contenuti (`content.spec.js`) | risposta gzip del backend integra al browser, mock file-backed binario byte-per-byte (firma PNG verificata anche dal browser), flusso SSE proxato consegnato progressivamente (timestamp distanziati ⇒ niente buffering) |

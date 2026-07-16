@@ -1,0 +1,10 @@
+{
+  "type": "ws",
+  "title": "Un messaggio e chiusura dal server",
+  "script": [
+    { "afterMs": 0, "data": "fine" }
+  ],
+  "onEnd": "close",
+  "closeCode": 4001,
+  "closeReason": "lavoro concluso"
+}

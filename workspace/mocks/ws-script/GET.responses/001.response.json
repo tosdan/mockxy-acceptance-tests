@@ -1,0 +1,10 @@
+{
+  "type": "ws",
+  "title": "Copione a tre messaggi",
+  "script": [
+    { "afterMs": 0, "data": "uno" },
+    { "afterMs": 500, "data": "due" },
+    { "afterMs": 1000, "data": "tre" }
+  ],
+  "onEnd": "keep-open"
+}

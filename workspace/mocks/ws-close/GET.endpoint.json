@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/ws-close",
+  "description": "Mock WebSocket che chiude dal server con codice e reason applicativi dopo il copione",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}
