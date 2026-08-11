@@ -88,6 +88,27 @@ services:
       - ./workspace/mocks:/workspace/mocks:ro
       - ./workspace/files:/workspace/files:ro
 
+  # Istanza sequence amministrabile: all'avvio copia una fixture minima in tmpfs, quindi ogni
+  # test può esercitare il CRUD reale senza modificare i file versionati sul filesystem host.
+  mockxy-sequence-admin:
+    image: mockxy-standalone-under-test
+    depends_on:
+      - mockxy
+    healthcheck:
+      <<: *healthcheck-hello
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/sequence-admin"]
+    environment:
+      ADMIN_API_ENABLED: "true"
+      ADMIN_ALLOWED_HOSTS: "localhost"
+    command: ["sh", "-c", "cp -R /seed/. /workspace/mocks/ && exec node index.js"]
+    ports:
+      - "8040:3000"
+    volumes:
+      - ./workspace-sequence-admin/mocks:/seed:ro
+    tmpfs:
+      - /workspace/mocks
+      - /workspace/files
+
   # Istanza "commutabile" per il test della cache dei preflight: il test la ricrea a metà
   # corsa con TOGGLE_CORS_ENABLED=false e poi la ripristina. Dedicata: il riavvio non deve
   # toccare le istanze condivise dagli altri test.

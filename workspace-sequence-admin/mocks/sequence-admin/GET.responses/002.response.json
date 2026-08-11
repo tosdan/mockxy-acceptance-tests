@@ -1,0 +1,8 @@
+{
+  "type": "mock",
+  "title": "Completed",
+  "status": 200,
+  "headers": { "content-type": "application/json" },
+  "delayMs": 0,
+  "body": { "status": "completed" }
+}

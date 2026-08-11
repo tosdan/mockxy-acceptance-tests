@@ -1,0 +1,9 @@
+{
+  "type": "sequence",
+  "title": "Elaborazione job",
+  "steps": [
+    { "response": "001.response.json", "times": 2 },
+    { "response": "002.response.json" }
+  ],
+  "onEnd": "stay"
+}
