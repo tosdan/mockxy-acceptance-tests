@@ -19,4 +19,8 @@ module.exports = async function globalSetup() {
   await assertReachable(`${stack.mockxyDevBaseUrl}/watched`, "Mockxy (istanza dev con watch)");
   await assertReachable(`${stack.mockxyToggleBaseUrl}/hello`, "Mockxy (istanza commutabile)");
   await assertReachable(`${stack.mockxyDelayBaseUrl}/hello`, "Mockxy (istanza con ritardo)");
+  await assertReachable(
+    `${stack.mockxySequenceAdminBaseUrl}/sequence-admin`,
+    "Mockxy (istanza sequence amministrabile)"
+  );
 };

@@ -1,0 +1,9 @@
+{
+  "type": "sequence",
+  "title": "Ciclo fasi",
+  "steps": [
+    { "response": "001.response.json", "forMs": 700 },
+    { "response": "002.response.json", "times": 1 }
+  ],
+  "onEnd": "loop"
+}

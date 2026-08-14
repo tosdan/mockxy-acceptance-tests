@@ -7,4 +7,5 @@ module.exports = {
   mockxyDevBaseUrl: "http://localhost:8070",
   mockxyToggleBaseUrl: "http://localhost:8060",
   mockxyDelayBaseUrl: "http://localhost:8050",
+  mockxySequenceAdminBaseUrl: "http://localhost:8040",
 };

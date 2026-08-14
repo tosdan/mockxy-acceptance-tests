@@ -36,7 +36,8 @@ Playwright (host) ──pilota──▶ browser       backend finto (node puro, 
                                                │   e timeout basso, per i test di contrasto)
                        mockxy-dev (:8070) ─────┤  (immagine di SVILUPPO: watch con polling su
                                                │   workspace-watch/ montato scrivibile)
-                     mockxy-delay (:8050) ─────┤  (ritardo globale 600ms, anche sul proxy)
+                    mockxy-delay (:8050) ─────┤  (ritardo globale 600ms, anche sul proxy)
+           mockxy-sequence-admin (:8040) ─────┤  (workspace in tmpfs, CRUD sequence isolato)
                     mockxy-toggle (:8060) ─────┘  (CORS commutabile a runtime dal test
                                                    della cache dei preflight)
 ```
@@ -62,7 +63,7 @@ Prerequisiti: Docker Desktop attivo, Node ≥ 20.
 ```bash
 npm install                       # solo la prima volta
 npx playwright install chromium   # solo la prima volta
-npm run stack:up                  # costruisce l'immagine e avvia i 4 container
+npm run stack:up                  # costruisce l'immagine e avvia lo stack completo
 npm test                          # esegue la suite Playwright
 npm run stack:down                # spegne lo stack
 ```
@@ -144,7 +145,7 @@ invertito: qui è fisso il commit della suite e si sceglie il motore, lì il con
 | WebSocket (`websocket.spec.js`) | passthrough dell'upgrade dal browser: push server→client e eco client→server attraverso il tunnel, round-trip del codice di chiusura applicativo; controllo in diretta sul backend per isolare i guasti |
 | Mock WebSocket (`ws-mock.spec.js`) | mock ws con WebSocket vera del browser: copione consegnato progressivamente e che riparte a ogni connessione, regole di risposta (reply solo a chi ha parlato, match json-subset cadenzato, niente eco di default), `onEnd close` con codice/reason applicativi fino al browser, 426 sulla GET normale, push broadcast della console via admin API con transcript |
 | Mock SSE (`sse-mock.spec.js`) | mock sse con EventSource vera: copione progressivo che riparte a ogni connessione, eventi nominati con `lastEventId`, chiusura dal server e riconnessione automatica, push della console via admin API |
-| Sequenze (`sequences.spec.js`) | sequenza di varianti vista da fuori: step con `times`, stato terminale con `onEnd stay`, cursore runtime condiviso resettato via admin API (stateful ⇒ solo chromium, in serie) |
+| Sequenze (`sequences.spec.js`) | response `sequence` selezionata vista dall'immagine standalone: `times`, `forMs`, `stay`/`loop`, detail/state/reset; su un'istanza amministrabile con workspace in tmpfs anche create/select/disattivazione, identità di più sequence e `409` sui target referenziati (stateful ⇒ solo chromium, in serie) |
 | Templating (`templating.spec.js`) | mock statici con `templated: true` attraverso l'immagine standalone: placeholder da richiesta e header, filtri di tipo, helper `now`, sorgente mancante ⇒ stringa vuota, escape `\{{` |
 | Timeout (`timeouts.spec.js`) | 502 allo scadere di `REQUEST_TIMEOUT_MS` (senza aspettare il backend), risposta avviata mai troncata (il timeout copre solo fino ai primi header), backend lento ma entro il timeout servito normalmente |
 | File dati (`data-files.spec.js`) | handler che legge un file dati con `data()` servito al browser dall'immagine standalone: copre il ponte `FILES_DIR` + bind mount di `workspace/files`, invisibile ai test jest |
