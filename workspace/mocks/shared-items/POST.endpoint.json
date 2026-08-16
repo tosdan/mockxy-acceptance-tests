@@ -1,0 +1,8 @@
+{
+  "method": "POST",
+  "path": "/shared-items",
+  "description": "Aggiunge un elemento alla lista runtime letta dalla GET",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

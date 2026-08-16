@@ -17,7 +17,9 @@ async function mockDetail(request, baseUrl, mockId) {
 }
 
 async function resetSequence(request, baseUrl, mockId) {
-  const response = await request.post(`${baseUrl}/_admin/api/mocks/${mockId}/sequence/reset`);
+  const response = await request.post(`${baseUrl}/_admin/api/mocks/${mockId}/sequence/reset`, {
+    data: {},
+  });
   expect(response.status()).toBe(200);
   return response.json();
 }

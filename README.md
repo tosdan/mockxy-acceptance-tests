@@ -73,9 +73,9 @@ sono su, il setup globale fallisce subito con un messaggio esplicito. Per vedere
 `npm run test:headed`. Log dei container: `npm run stack:logs`.
 
 La suite gira su **tre motori browser** (Chromium, Firefox, WebKit): le semantiche sotto
-test — CORS, cookie, preflight, SSE — sono proprio quelle che divergono tra i motori. I due
-test stateful (hot reload, cache dei preflight) si autolimitano a Chromium perché mutano
-stato condiviso mentre i project girano in parallelo. Per il primo run:
+test — CORS, cookie, preflight, SSE — sono proprio quelle che divergono tra i motori. I test
+stateful (sequence, shared runtime state, hot reload e cache dei preflight) si autolimitano a
+Chromium perché mutano stato condiviso mentre i project girano in parallelo. Per il primo run:
 `npx playwright install chromium firefox webkit`. In CI c'è un retry automatico
 (`retries: 1` solo con `CI` impostata); in locale la flakiness resta visibile.
 
@@ -149,6 +149,7 @@ invertito: qui è fisso il commit della suite e si sceglie il motore, lì il con
 | Templating (`templating.spec.js`) | mock statici con `templated: true` attraverso l'immagine standalone: placeholder da richiesta e header, filtri di tipo, helper `now`, sorgente mancante ⇒ stringa vuota, escape `\{{` |
 | Timeout (`timeouts.spec.js`) | 502 allo scadere di `REQUEST_TIMEOUT_MS` (senza aspettare il backend), risposta avviata mai troncata (il timeout copre solo fino ai primi header), backend lento ma entro il timeout servito normalmente |
 | File dati (`data-files.spec.js`) | handler che legge un file dati con `data()` servito al browser dall'immagine standalone: copre il ponte `FILES_DIR` + bind mount di `workspace/files`, invisibile ai test jest |
+| Stato runtime condiviso (`shared-state.spec.js`) | frontend reale cross-origin: GET dal seed → POST arbitraria → GET arricchita → reset → GET iniziale; opt-in filtri/paginazione e `X-Total-Count`; conflitto `seedKey` sanitizzato nel mock ma diagnosticabile dal Monitor; contratto Admin JSON `{}`. I casi sono seriali su Chromium e ogni setup resetta esplicitamente la risorsa |
 | Contenuti (`content.spec.js`) | risposta gzip del backend integra al browser, mock file-backed binario byte-per-byte (firma PNG verificata anche dal browser), flusso SSE proxato consegnato progressivamente (timestamp distanziati ⇒ niente buffering) |
 | Hot reload (`dev-watch.spec.js`) | immagine di sviluppo: modifica di un mock sul filesystem host applicata a caldo dal watcher nel container (bind mount scrivibile + polling), con ripristino idempotente della fixture |
 | Latenza (`delay.spec.js`) | ritardo globale sui mock senza `delayMs` proprio e, con `npm_config_delay_all`, sulle richieste proxate; contrasto senza ritardo (minimo su più tentativi, robusto alla contesa) |

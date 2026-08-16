@@ -1,0 +1,5 @@
+{
+  "type": "handler",
+  "title": "Muta la lista runtime condivisa",
+  "sourceFile": "001.handler.js"
+}
