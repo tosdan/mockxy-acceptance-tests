@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/shared-items-conflict",
+  "description": "Firma volutamente incompatibile per verificare la diagnostica sicura",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

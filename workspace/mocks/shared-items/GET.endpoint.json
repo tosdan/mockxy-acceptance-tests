@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/shared-items",
+  "description": "Lista stateful condivisa con la POST, inizializzata dal file dati",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}
