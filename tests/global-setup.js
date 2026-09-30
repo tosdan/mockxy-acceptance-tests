@@ -27,4 +27,8 @@ module.exports = async function globalSetup() {
     `${stack.mockxyDiscoveryBaseUrl}/agent-ready`,
     "Mockxy (istanza della discovery amministrativa)"
   );
+  await assertReachable(
+    `${stack.mockxyStreamBaseUrl}/stream-other`,
+    "Mockxy (istanza di sviluppo per gli stream durante i reload)"
+  );
 };

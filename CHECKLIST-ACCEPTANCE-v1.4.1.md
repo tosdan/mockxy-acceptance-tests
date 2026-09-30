@@ -21,9 +21,9 @@ Opus implementa e aggiorna le evidenze; Codex fa la code review delle PR; Opus a
 
 | Passo | Priorità | Stato | Evidenze: PR, verifiche e review |
 |---|---|---|---|
-| T0 — Isolamento e infrastruttura | Prerequisito | Parziale: base integrata | [#7](https://github.com/tosdan/mockxy-acceptance-tests/pull/7), integrata (`5658b40`): istanza `mockxy-discovery`, client admin `tests/admin-client.js`, modello di proprietà dello stato nel README. L'istanza watcher amministrabile arriva con T2 e l'uso del project di riavvio con T4, dove servono. Review Codex su `4476ecd`: 0 rilievi. |
+| T0 — Isolamento e infrastruttura | Prerequisito | Parziale: base integrata | [#7](https://github.com/tosdan/mockxy-acceptance-tests/pull/7), integrata (`5658b40`): istanza `mockxy-discovery`, client admin `tests/admin-client.js`, modello di proprietà dello stato nel README. L'uso del project di riavvio arriva con T4. [#8](https://github.com/tosdan/mockxy-acceptance-tests/pull/8): istanza di sviluppo `mockxy-stream` con watcher e admin, seed in tmpfs. Review Codex su `4476ecd`: 0 rilievi. |
 | T1 — Discovery e accesso nell'immagine distribuita | Alta | Completato | [#7](https://github.com/tosdan/mockxy-acceptance-tests/pull/7), integrata (`5658b40`): `tests/discovery.spec.js`, 8 test (7 solo HTTP su Chromium, 1 di accesso cross-origin sui tre browser). Motore `7456cdc` (codice identico a `v1.4.1`), suite `e6a61fc`. Suite completa verde: chromium 71, firefox 51 (+20 skip), webkit 51 (+20 skip), chromium-stack-mutating 1; nuovi test ripetuti 5 volte senza retry, verdi. Controprove nella PR. Review Codex su `4476ecd`: 0 rilievi Standards e Spec; nuovi test rieseguiti sui tre browser senza retry (10 passati, 14 skip previsti) e CI verde. |
-| T2 — Stream, reload e diagnostica | Alta | Da iniziare | — |
+| T2 — Stream, reload e diagnostica | Alta | In review | [#8](https://github.com/tosdan/mockxy-acceptance-tests/pull/8): `tests/stream-reload.spec.js`, 6 test su Chromium in un solo worker. Motore `7456cdc` (codice identico a `v1.4.1`), suite `b7de454`. Suite completa verde: chromium 77, firefox 51 (+26 skip), webkit 51 (+26 skip), chromium-stack-mutating 1; nuovi test ripetuti 5 volte senza retry (`--workers=1`), 30/30. Tre controprove sul motore alterato nel solo container, poi ricreato. **Divergenza da sottoporre alla review:** gli `id` delle connessioni SSE/WS sono numeri, lo spec li dichiara stringhe. Review Codex su `9e263ac`: P3 (callback WS che dopo `wsCloseAll` scrivevano nel registro svuotato, `TypeError` nella pagina) e P2 (causa `admin` pretesa sull'ultimo tentativo, che l'eco del watcher può sostituire), entrambi riprodotti e corretti; regressione sugli errori della pagina, che fallisce in 4 test su 6 con il client precedente. Codex consiglia di dichiarare interi gli id nello spec, con una PR separata sul motore. |
 | T3 — Setup ripetibile tramite API, browser e Monitor | Alta | Da iniziare | — |
 | T4 — Configurazione effimera e connessioni esistenti | Media | Da iniziare | — |
 | T5 — Cattura e riproduzione del traffico | Media | Da iniziare | — |
@@ -37,7 +37,7 @@ Opus implementa e aggiorna le evidenze; Codex fa la code review delle PR; Opus a
 
 - [x] Predisporre un'istanza standalone amministrabile dedicata ai nuovi scenari, con seed minimo copiato in workspace scrivibile, preferibilmente tmpfs. Impostare esplicitamente admin, allowlist Host, backend e CORS necessari.
 - [x] Preservare l'istanza principale e i suoi bind mount read-only. Non usare l'istanza `mockxy-sequence-admin` per cambiare impostazioni globali dei nuovi scenari.
-- [ ] Per il watcher usare una fixture di sviluppo dedicata, con admin esplicitamente abilitata e filesystem modificabile dal test; non condividere i file modificati da `dev-watch.spec.js`. _Con T2: un nuovo servizio di sviluppo con workspace proprio, `mockxy-dev` resta com'è._
+- [x] Per il watcher usare una fixture di sviluppo dedicata, con admin esplicitamente abilitata e filesystem modificabile dal test; non condividere i file modificati da `dev-watch.spec.js`. _Con T2: `mockxy-stream`, servizio di sviluppo con seed in tmpfs modificato con `docker compose exec`; `mockxy-dev` resta com'è._
 - [x] Allineare nuove istanze in `docker-compose.yml`, `tests/stack.js` e `tests/global-setup.js`; ogni servizio ha un healthcheck che verifica il serving effettivo di una rotta di fixture.
 - [x] Definire chi possiede ogni stato mutabile. I test che condividono configurazione, Monitor o file devono essere serializzati oppure usare istanze isolate. Limitarsi a Chromium non serializza file diversi con `fullyParallel: true`.
 - [ ] Eseguire i casi che riavviano o ricreano container senza concorrenza con altri test: seguire il modello del project `chromium-stack-mutating`, includendo la serializzazione fra i suoi stessi test quando necessaria. _Regola documentata nel README; si applica con T4._
@@ -61,14 +61,14 @@ Opus implementa e aggiorna le evidenze; Codex fa la code review delle PR; Opus a
 
 ## T2 — Stream, reload e diagnostica
 
-- [ ] Aprire SSE e WebSocket dal browser e attendere la conferma che entrambe le connessioni siano effettivamente registrate nelle console.
-- [ ] Modificare la descrizione, preparare una variante realmente inattiva sullo stesso endpoint e modificare un endpoint estraneo: le connessioni originali restano aperte e il copione non riparte.
-- [ ] Rilevare le riconnessioni nascoste di EventSource: confrontare l'identità della connessione in console e gli eventi di apertura/errore, oltre ai messaggi ricevuti. Ricevere messaggi dopo il reload, da solo, non dimostra la preservazione.
-- [ ] Modificare il copione attivo SSE e verificare la chiusura della connessione originale SSE, lasciando aperta la WS; fare la verifica simmetrica cambiando il comportamento WS.
-- [ ] Sul servizio con watcher verificare che una modifica estranea e il suo reload non interrompano lo stream. Attendere il tentativo concluso, non un numero fisso di reload: API e watcher possono aggregare le cause.
-- [ ] Tramite filesystem rendere illeggibile una nuova definizione di stream selezionata: il runtime mantiene lo stream precedente, `/runtime/status` dichiara `degraded` e `serving: retained`, push e stato della console continuano a funzionare sulla definizione servita.
-- [ ] Corrompere il sorgente di un handler già caricato: il browser continua a ricevere la risposta precedente e la diagnostica segnala il mantenimento. Correggere il sorgente e verificare nuova risposta, rimozione dell'errore e aggiornamento della revisione `diagnostics`.
-- [ ] Ripristinare tutti i file e chiudere le connessioni anche se un'asserzione fallisce. Usare attese con scadenza per il watcher, senza modificare il codice del motore o iniettare errori nei suoi moduli.
+- [x] Aprire SSE e WebSocket dal browser e attendere la conferma che entrambe le connessioni siano effettivamente registrate nelle console.
+- [x] Modificare la descrizione, preparare una variante realmente inattiva sullo stesso endpoint e modificare un endpoint estraneo: le connessioni originali restano aperte e il copione non riparte.
+- [x] Rilevare le riconnessioni nascoste di EventSource: confrontare l'identità della connessione in console e gli eventi di apertura/errore, oltre ai messaggi ricevuti. Ricevere messaggi dopo il reload, da solo, non dimostra la preservazione.
+- [x] Modificare il copione attivo SSE e verificare la chiusura della connessione originale SSE, lasciando aperta la WS; fare la verifica simmetrica cambiando il comportamento WS.
+- [x] Sul servizio con watcher verificare che una modifica estranea e il suo reload non interrompano lo stream. Attendere il tentativo concluso, non un numero fisso di reload: API e watcher possono aggregare le cause.
+- [x] Tramite filesystem rendere illeggibile una nuova definizione di stream selezionata (_contenuto non interpretabile: nel container si è root, un `chmod` non basta_): il runtime mantiene lo stream precedente, `/runtime/status` dichiara `degraded` e `serving: retained`, push e stato della console continuano a funzionare sulla definizione servita.
+- [x] Corrompere il sorgente di un handler già caricato: il browser continua a ricevere la risposta precedente e la diagnostica segnala il mantenimento. Correggere il sorgente e verificare nuova risposta, rimozione dell'errore e aggiornamento della revisione `diagnostics`.
+- [x] Ripristinare tutti i file e chiudere le connessioni anche se un'asserzione fallisce. Usare attese con scadenza per il watcher, senza modificare il codice del motore o iniettare errori nei suoi moduli.
 
 **Completamento:** la continuità degli stream e la diagnostica sono dimostrate su rete e filesystem reali, senza che la riconnessione automatica mascheri una regressione.
 

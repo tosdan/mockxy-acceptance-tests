@@ -137,18 +137,33 @@
     // WebSocket NOMINATE per i test a più connessioni (es. una regola risponde solo a chi
     // ha parlato): si apre con wsOpen, si parla con wsSend, si legge il ricevuto con
     // wsReceived e si chiude con wsCloseAll. Lo stato vive nella pagina tra le evaluate.
+    // I callback usano la propria connessione, non il registro: dopo wsCloseAll il registro è
+    // vuoto (o contiene una connessione nuova con lo stesso nome) quando arriva la chiusura.
     window.__wsSockets = {};
     window.wsOpen = function wsOpen(name, url) {
       return new Promise((resolve) => {
         const socket = new WebSocket(url);
-        window.__wsSockets[name] = { socket, received: [] };
+        let markClosed;
+        const entry = {
+          socket,
+          received: [],
+          closed: null,
+          whenClosed: new Promise((done) => {
+            markClosed = done;
+          }),
+        };
+        window.__wsSockets[name] = entry;
         const timer = setTimeout(() => resolve({ opened: false }), 8000);
         socket.onopen = () => {
           clearTimeout(timer);
           resolve({ opened: true });
         };
         socket.onmessage = (event) => {
-          window.__wsSockets[name].received.push({ data: event.data, atMs: Date.now() });
+          entry.received.push({ data: event.data, atMs: Date.now() });
+        };
+        socket.onclose = (event) => {
+          entry.closed = { code: event.code, reason: event.reason };
+          markClosed();
         };
       });
     };
@@ -158,11 +173,62 @@
     window.wsReceived = function wsReceived(name) {
       return window.__wsSockets[name].received;
     };
+    // Stato completo di una WebSocket nominata: messaggi e, se c'è stata, la chiusura.
+    window.wsState = function wsState(name) {
+      const entry = window.__wsSockets[name];
+      return { received: entry.received.map((message) => message.data), closed: entry.closed };
+    };
+
+    // EventSource NOMINATE per osservare una connessione nel tempo: oltre ai messaggi annotano
+    // ogni apertura e ogni errore, perché EventSource riconnette da sola dopo una chiusura del
+    // server e i messaggi, da soli, non distinguono la connessione originale da una nuova.
+    window.__sseSources = {};
+    window.sseOpen = function sseOpen(name, url) {
+      return new Promise((resolve) => {
+        const source = new EventSource(url);
+        const entry = { source, opens: 0, errors: 0, messages: [] };
+        window.__sseSources[name] = entry;
+        const timer = setTimeout(() => resolve({ opened: false }), 8000);
+        source.onopen = () => {
+          entry.opens += 1;
+          clearTimeout(timer);
+          resolve({ opened: true });
+        };
+        source.onerror = () => {
+          entry.errors += 1;
+        };
+        source.onmessage = (event) => {
+          entry.messages.push(event.data);
+        };
+      });
+    };
+    window.sseState = function sseState(name) {
+      const entry = window.__sseSources[name];
+      return {
+        opens: entry.opens,
+        errors: entry.errors,
+        messages: [...entry.messages],
+        readyState: entry.source.readyState,
+      };
+    };
+    window.sseCloseAll = function sseCloseAll() {
+      for (const entry of Object.values(window.__sseSources)) {
+        try { entry.source.close(); } catch { /* già chiusa */ }
+      }
+      window.__sseSources = {};
+    };
+    // Chiude tutte le WebSocket nominate; la promise si risolve quando le chiusure sono
+    // arrivate (al più dopo 3 secondi), così chi pulisce sa che nessun evento è ancora in volo.
     window.wsCloseAll = function wsCloseAll() {
-      for (const entry of Object.values(window.__wsSockets)) {
+      const entries = Object.values(window.__wsSockets);
+      window.__wsSockets = {};
+      for (const entry of entries) {
         try { entry.socket.close(); } catch { /* già chiuso */ }
       }
-      window.__wsSockets = {};
+      return Promise.race([
+        Promise.all(entries.map((entry) => entry.whenClosed)),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
     };
 
     // Raccoglie expectedCount eventi da un flusso SSE, annotando QUANDO ciascuno arriva:

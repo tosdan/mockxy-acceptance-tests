@@ -1,0 +1,9 @@
+{
+  "type": "ws",
+  "title": "Copione breve",
+  "script": [
+    { "afterMs": 0, "data": "ws-uno" },
+    { "afterMs": 200, "data": "ws-due" }
+  ],
+  "onEnd": "keep-open"
+}

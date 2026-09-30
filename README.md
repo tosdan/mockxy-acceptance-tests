@@ -40,6 +40,8 @@ Playwright (host) ──pilota──▶ browser       backend finto (node puro, 
            mockxy-sequence-admin (:8040) ─────┤  (workspace in tmpfs, CRUD sequence isolato)
                mockxy-discovery (:8030) ─────┤  (admin attiva, nove impostazioni dichiarate,
                                                │   seed in tmpfs: discovery in sola lettura)
+                  mockxy-stream (:8020) ─────┤  (immagine di SVILUPPO: watcher + admin, seed
+                                               │   in tmpfs modificato con docker compose exec)
                     mockxy-toggle (:8060) ─────┘  (CORS commutabile a runtime dal test
                                                    della cache dei preflight)
 ```
@@ -97,6 +99,7 @@ comunque in parallelo, quindi due file non devono mutare lo stesso stato.
 | `mockxy-dev` (:8070) | `dev-watch` | file di `workspace-watch/` | Chromium |
 | `mockxy-toggle` (:8060) | `preflight-cache` | il container, ricreato | project `chromium-stack-mutating`, dopo i tre browser |
 | `mockxy-discovery` (:8030) | nessuno: `discovery` la legge soltanto | nessuno (seed in tmpfs) | letture HTTP su Chromium, accesso cross-origin sui tre browser |
+| `mockxy-stream` (:8020) | `stream-reload` | file del tmpfs, connessioni SSE/WS e console | Chromium, in ordine in un solo worker; ogni test riparte dal seed |
 
 Regole per le istanze nuove:
 
@@ -105,6 +108,9 @@ Regole per le istanze nuove:
 - ogni istanza è allineata in `docker-compose.yml` (con un healthcheck che verifica il serving
   di una rotta di fixture), `tests/stack.js` e `tests/global-setup.js`;
 - i test che riavviano o ricreano container vanno nel project `chromium-stack-mutating`;
+- i file di un'istanza in tmpfs si modificano con `docker compose exec` (serve il CLI docker,
+  come per `preflight-cache`), e l'attesa del reload guarda il suo effetto osservabile
+  (errore in diagnostica, risposta servita), non un numero fisso di tentativi;
 - le mutazioni e le letture dell'admin API passano dal client HTTP di Playwright
   (`tests/admin-client.js`), mai dal browser: l'admin API non è leggibile cross-origin e non
   va resa tale per i test;
@@ -113,6 +119,10 @@ Regole per le istanze nuove:
 
 I test che usano solo il client HTTP (senza semantica browser) girano una volta, su Chromium:
 il motore del browser non cambia l'esito.
+
+Per ripetere dei test che condividono un'istanza, aggiungere `--workers=1` a `--repeat-each`:
+altrimenti Playwright distribuisce le ripetizioni su più worker, che userebbero la stessa
+istanza nello stesso momento.
 
 **Nota di versioning**: la suite testa l'immagine costruita dal checkout corrente di
 `../mockxy`. Dopo modifiche al motore serve `npm run stack:up` (ri-build) per testare la
@@ -189,6 +199,7 @@ invertito: qui è fisso il commit della suite e si sceglie il motore, lì il con
 | Hot reload (`dev-watch.spec.js`) | immagine di sviluppo: modifica di un mock sul filesystem host applicata a caldo dal watcher nel container (bind mount scrivibile + polling), con ripristino idempotente della fixture |
 | Latenza (`delay.spec.js`) | ritardo globale sui mock senza `delayMs` proprio e, con `npm_config_delay_all`, sulle richieste proxate; contrasto senza ritardo (minimo su più tentativi, robusto alla contesa) |
 | Discovery (`discovery.spec.js`) | nell'immagine standalone: `/info`, `/config`, `/runtime/status` e `/openapi.yaml` letti dal container e validati sugli schemi dello spec servito (non quello del checkout host); versione del checkout costruito e `runtimeId` coerente; workspace e listener interni al container; `/config` uguale alle impostazioni dichiarate nel compose, senza override; operazioni e campi usati dagli scenari agent/API presenti nello spec; con admin spenta `404` dal motore anche col proxy fallback, `403` su Host estraneo, rotte opache al browser cross-origin anche con CORS attivo |
+| Stream durante i reload (`stream-reload.spec.js`) | immagine di sviluppo con watcher e admin, file modificati nel container: SSE e WS aperte dal browser sopravvivono a descrizione, variante inattiva ed endpoint estraneo cambiati via API e a una modifica estranea vista dal watcher, senza riconnessioni nascoste (identità in console, aperture ed errori di EventSource, copione non ripetuto, push ricevuto); il copione SSE o WS cambiato chiude solo la connessione interessata; una nuova definizione SSE illeggibile lascia servito lo stream precedente (`degraded`, `serving: retained`, console e push funzionanti); un handler dal sorgente rotto resta servito finché la correzione non rimuove l'errore, con la revisione `diagnostics` che avanza |
 | Admin API (`admin-api.spec.js`) | catalogo servito dal container, guardia DNS-rebinding (403 su Host estraneo, mock non filtrati), vettore CSRF text/plain respinto con 415 senza creare nulla, risposte admin opache al JS cross-origin anche con CORS attivo |
 | Cache preflight (`preflight-cache.spec.js`) | il caveat di docs/CORS.md reso osservabile: a CORS spento a metà corsa, un preflight in cache fa ancora PARTIRE la richiesta (il backend la riceve, la risposta è bloccata), un contesto browser fresco non la manda proprio — col contatore del backend come discriminante |
 
