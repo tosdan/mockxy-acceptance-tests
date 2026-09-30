@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/stream-other",
+  "description": "Endpoint estraneo agli stream, modificato durante i reload",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

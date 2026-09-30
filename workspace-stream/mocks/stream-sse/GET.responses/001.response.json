@@ -1,0 +1,10 @@
+{
+  "type": "sse",
+  "title": "Copione breve",
+  "retryMs": 250,
+  "script": [
+    { "afterMs": 0, "data": "sse-uno" },
+    { "afterMs": 200, "data": "sse-due" }
+  ],
+  "onEnd": "keep-open"
+}

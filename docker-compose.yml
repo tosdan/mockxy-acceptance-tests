@@ -188,6 +188,42 @@ services:
     volumes:
       - ./workspace-watch/mocks:/workspace/mocks
 
+  # Istanza di SVILUPPO amministrabile per la continuità degli stream durante i reload (T2):
+  # watcher attivo e admin API insieme. Il seed è copiato in tmpfs: i test modificano i file con
+  # `docker compose exec`, come un editor che salva, e anche le mutazioni API scrivono lì, senza
+  # toccare file versionati. Il watcher riceve gli eventi nativi del tmpfs; il passaggio delle
+  # modifiche attraverso un bind mount con polling resta coperto da mockxy-dev.
+  # L'healthcheck attende anche il watcher pronto: prima non vedrebbe le modifiche dei test.
+  # Proprietario: solo stream-reload.spec.js, in serie.
+  mockxy-stream:
+    image: mockxy-dev-under-test
+    depends_on:
+      - mockxy-dev # garantisce che l'immagine di sviluppo sia stata costruita
+    healthcheck:
+      <<: *healthcheck-hello
+      test:
+        - "CMD-SHELL"
+        - >-
+          wget -q -O /dev/null http://127.0.0.1:3000/stream-other &&
+          wget -q -O - http://127.0.0.1:3000/_admin/api/info | grep -q '"state":"ready"'
+    environment:
+      MOCKS_DIR: "/workspace/mocks"
+      FILES_DIR: "/workspace/files"
+      DEV_WATCH: "true"
+      CHOKIDAR_USEPOLLING: "false"
+      ADMIN_API_ENABLED: "true"
+      ADMIN_ALLOWED_HOSTS: "localhost"
+      CORS_ENABLED: "true"
+      PROXY_FALLBACK_ENABLED: "false"
+    command: ["sh", "-c", "cp -R /seed/. /workspace/mocks/ && exec node index.js"]
+    ports:
+      - "8020:3000"
+    volumes:
+      - ./workspace-stream/mocks:/seed:ro
+    tmpfs:
+      - /workspace/mocks
+      - /workspace/files
+
   backend:
     image: node:24-alpine
     command: ["node", "/srv/server.js"]

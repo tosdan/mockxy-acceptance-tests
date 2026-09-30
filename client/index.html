@@ -141,7 +141,7 @@
     window.wsOpen = function wsOpen(name, url) {
       return new Promise((resolve) => {
         const socket = new WebSocket(url);
-        window.__wsSockets[name] = { socket, received: [] };
+        window.__wsSockets[name] = { socket, received: [], closed: null };
         const timer = setTimeout(() => resolve({ opened: false }), 8000);
         socket.onopen = () => {
           clearTimeout(timer);
@@ -150,6 +150,9 @@
         socket.onmessage = (event) => {
           window.__wsSockets[name].received.push({ data: event.data, atMs: Date.now() });
         };
+        socket.onclose = (event) => {
+          window.__wsSockets[name].closed = { code: event.code, reason: event.reason };
+        };
       });
     };
     window.wsSend = function wsSend(name, text) {
@@ -157,6 +160,50 @@
     };
     window.wsReceived = function wsReceived(name) {
       return window.__wsSockets[name].received;
+    };
+    // Stato completo di una WebSocket nominata: messaggi e, se c'è stata, la chiusura.
+    window.wsState = function wsState(name) {
+      const entry = window.__wsSockets[name];
+      return { received: entry.received.map((message) => message.data), closed: entry.closed };
+    };
+
+    // EventSource NOMINATE per osservare una connessione nel tempo: oltre ai messaggi annotano
+    // ogni apertura e ogni errore, perché EventSource riconnette da sola dopo una chiusura del
+    // server e i messaggi, da soli, non distinguono la connessione originale da una nuova.
+    window.__sseSources = {};
+    window.sseOpen = function sseOpen(name, url) {
+      return new Promise((resolve) => {
+        const source = new EventSource(url);
+        const entry = { source, opens: 0, errors: 0, messages: [] };
+        window.__sseSources[name] = entry;
+        const timer = setTimeout(() => resolve({ opened: false }), 8000);
+        source.onopen = () => {
+          entry.opens += 1;
+          clearTimeout(timer);
+          resolve({ opened: true });
+        };
+        source.onerror = () => {
+          entry.errors += 1;
+        };
+        source.onmessage = (event) => {
+          entry.messages.push(event.data);
+        };
+      });
+    };
+    window.sseState = function sseState(name) {
+      const entry = window.__sseSources[name];
+      return {
+        opens: entry.opens,
+        errors: entry.errors,
+        messages: [...entry.messages],
+        readyState: entry.source.readyState,
+      };
+    };
+    window.sseCloseAll = function sseCloseAll() {
+      for (const entry of Object.values(window.__sseSources)) {
+        try { entry.source.close(); } catch { /* già chiusa */ }
+      }
+      window.__sseSources = {};
     };
     window.wsCloseAll = function wsCloseAll() {
       for (const entry of Object.values(window.__wsSockets)) {

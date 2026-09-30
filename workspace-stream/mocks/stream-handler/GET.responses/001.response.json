@@ -1,0 +1,5 @@
+{
+  "type": "handler",
+  "title": "Risponde con la versione del sorgente",
+  "sourceFile": "001.handler.js"
+}

@@ -21,6 +21,25 @@ async function adminJson(request, baseUrl, route) {
   return response.json();
 }
 
+/**
+ * Mutazione admin con lo stato atteso: il suo successo è la barriera di applicazione, perché
+ * l'admin API risponde dopo aver installato la modifica. Niente retry: una scrittura fallita
+ * si diagnostica, non si ripete alla cieca.
+ */
+async function adminSend(request, baseUrl, method, route, data, expectedStatus = 200) {
+  const response = await request.fetch(adminUrl(baseUrl, route), { method, data });
+  expect(response.status(), `${method} ${route}: ${await response.text()}`).toBe(expectedStatus);
+  return response.status() === 204 ? null : response.json();
+}
+
+/** Id dell'endpoint con metodo e path dati, risolto dal catalogo (mai da titolo o selezione). */
+async function mockIdFor(request, baseUrl, method, routePath) {
+  const catalog = await adminJson(request, baseUrl, "/mocks");
+  const matches = catalog.items.filter((item) => item.method === method && item.path === routePath);
+  expect(matches, `${method} ${routePath} nel catalogo`).toHaveLength(1);
+  return matches[0].id;
+}
+
 /** Lo spec OpenAPI servito dal motore in esecuzione, già interpretato. */
 async function fetchServedSpec(request, baseUrl) {
   const response = await request.get(adminUrl(baseUrl, "/openapi.yaml"));
@@ -70,6 +89,8 @@ module.exports = {
   ADMIN_PREFIX,
   adminUrl,
   adminJson,
+  adminSend,
+  mockIdFor,
   fetchServedSpec,
   schemaValidator,
   resolveRef,
