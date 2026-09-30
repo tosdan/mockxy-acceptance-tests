@@ -2,6 +2,7 @@
 module.exports = {
   clientPageUrl: "http://localhost:8081/",
   backendDirectBaseUrl: "http://localhost:9090",
+  backendBDirectBaseUrl: "http://localhost:9091",
   mockxyBaseUrl: "http://localhost:8080",
   mockxyRawBaseUrl: "http://localhost:8090",
   mockxyDevBaseUrl: "http://localhost:8070",
@@ -11,4 +12,5 @@ module.exports = {
   mockxyDiscoveryBaseUrl: "http://localhost:8030",
   mockxyStreamBaseUrl: "http://localhost:8020",
   mockxySetupBaseUrl: "http://localhost:8010",
+  mockxyConfigBaseUrl: "http://localhost:8005",
 };

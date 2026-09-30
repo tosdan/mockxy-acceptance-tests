@@ -1,6 +1,9 @@
 const { defineConfig, devices } = require("@playwright/test");
 const stack = require("./tests/stack");
 
+// Test che ricreano o riavviano container: fuori dai project browser, in project dedicati.
+const STACK_MUTATING = /preflight-cache|runtime-config-restart/;
+
 module.exports = defineConfig({
   testDir: "./tests",
   globalSetup: "./tests/global-setup.js",
@@ -22,15 +25,24 @@ module.exports = defineConfig({
   // le ALTRE istanze pubblicate (ECONNRESET visto in CI sui test concorrenti, retry incluso
   // perché ricadeva nella stessa finestra). Va quindi in un project dedicato che parte solo
   // quando i tre project browser hanno finito: mai concorrente con nessuno.
+  //
+  // runtime-config-restart riavvia mockxy-config per la stessa ragione: ha un project proprio che
+  // parte dopo chromium-stack-mutating, così anche i riavvii fra loro restano in serie.
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: /preflight-cache/ },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] }, testIgnore: /preflight-cache/ },
-    { name: "webkit", use: { ...devices["Desktop Safari"] }, testIgnore: /preflight-cache/ },
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: STACK_MUTATING },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] }, testIgnore: STACK_MUTATING },
+    { name: "webkit", use: { ...devices["Desktop Safari"] }, testIgnore: STACK_MUTATING },
     {
       name: "chromium-stack-mutating",
       use: { ...devices["Desktop Chrome"] },
       testMatch: /preflight-cache/,
       dependencies: ["chromium", "firefox", "webkit"],
+    },
+    {
+      name: "chromium-config-restart",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /runtime-config-restart/,
+      dependencies: ["chromium-stack-mutating"],
     },
   ],
 });
