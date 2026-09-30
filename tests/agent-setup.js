@@ -7,17 +7,23 @@ const { adminUrl } = require("./admin-client");
 // Non ripristina niente e non ritenta le scritture: ogni problema diventa un SetupError con un
 // codice diagnostico. Le chiamate passano dal client HTTP di Playwright, mai dal browser.
 
-// Operazioni del contratto servito da cui dipende il setup, verificate prima di qualunque
-// mutazione: nessuna scoperta tramite scritture di prova.
+// Tutte le operazioni del contratto servito che il setup e le sue verifiche usano, controllate
+// prima di qualunque mutazione: un'operazione mancante non va scoperta a modifiche iniziate, né
+// tramite scritture di prova. Chi aggiunge una chiamata all'helper la aggiunge qui.
 const REQUIRED_OPERATIONS = [
   ["get", "/info"],
   ["patch", "/config"],
+  ["get", "/mocks"],
+  ["get", "/mocks/{id}"],
+  ["put", "/mocks/{id}"],
+  ["patch", "/mocks/enabled"],
+  ["post", "/mocks/{id}/responses"],
   ["get", "/mocks/{id}/responses/{responseFileName}"],
   ["put", "/mocks/{id}/responses/{responseFileName}"],
-  ["post", "/mocks/{id}/responses"],
+  ["delete", "/mocks/{id}/responses/{responseFileName}"],
+  ["get", "/mocks/{id}/sequence/state"],
   ["post", "/mocks/{id}/sequence/reset"],
   ["patch", "/server"],
-  ["patch", "/mocks/enabled"],
   ["get", "/monitoring/requests"],
 ];
 

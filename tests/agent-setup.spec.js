@@ -1,4 +1,6 @@
+const http = require("http");
 const { test, expect } = require("@playwright/test");
+const YAML = require("yaml");
 const stack = require("./stack");
 const { adminJson, adminSend } = require("./admin-client");
 const { AgentSetup, SetupError } = require("./agent-setup");
@@ -66,14 +68,21 @@ async function setupScenario(setup) {
 
 /**
  * Una variante preparata con select: false e letta per filename non cambia risposta servita,
- * selezione né cursore della sequence. Uno step della sequence selezionata, invece, è attivo pur
+ * selezione né cursore della sequence. La risposta servita si confronta con una richiesta vera
+ * mentre la bozza esiste: la sua cancellazione ricarica il runtime e nasconderebbe un errore. Uno step della sequence selezionata, invece, è attivo pur
  * non essendo selezionato: non è un esempio di preparazione inattiva.
  */
 async function expectInactivePreparation(setup, ids) {
   const step = await setup.readVariant(ids.progress, PROGRESS.pending);
   expect(step, "uno step della sequence selezionata è attivo").toMatchObject({ selected: false, active: true });
 
+  // L'endpoint statico non consuma la sequence: si può interrogare senza toccare il cursore.
+  const servedOrders = async () => {
+    const response = await setup.request.get(`${BASE}${ORDERS.path}`);
+    return { status: response.status(), body: await response.json() };
+  };
   const before = {
+    served: await servedOrders(),
     orders: await setup.read(`/mocks/${ids.orders}`, "Reading orders"),
     progress: await setup.read(`/mocks/${ids.progress}`, "Reading progress"),
     cursor: await setup.read(`/mocks/${ids.progress}/sequence/state`, "Reading the sequence state"),
@@ -81,6 +90,7 @@ async function expectInactivePreparation(setup, ids) {
   const draft = await setup.createInactiveVariant(ids.orders, { ...MOCK_DEFAULTS, title: "Bozza", status: 418, body: { draft: true } });
   try {
     expect(draft).toMatchObject({ selected: false, active: false, response: { status: 418 } });
+    expect(await servedOrders(), "risposta realmente servita invariata, con la bozza presente").toEqual(before.served);
     const after = {
       orders: await setup.read(`/mocks/${ids.orders}`, "Reading orders"),
       progress: await setup.read(`/mocks/${ids.progress}`, "Reading progress"),
@@ -240,6 +250,32 @@ test.describe("setup ripetibile via API, browser e Monitor", () => {
     await expect(elsewhere.connect({ mocksDir: "/workspace/altro" })).rejects.toMatchObject({ code: "WRONG_WORKSPACE" });
     const infoAfter = await adminJson(request, BASE, "/info");
     expect(infoAfter.revisions, "nessuna mutazione dopo il workspace sbagliato").toEqual(infoBefore.revisions);
+
+    // Un contratto servito senza un'operazione usata dal setup (qui PUT /mocks/{id}, la selezione)
+    // ferma connect prima di qualunque mutazione. Lo stub risponde con /info reale e lo spec
+    // reale privato di quell'operazione, e registra ogni chiamata.
+    const realInfo = await adminJson(request, BASE, "/info");
+    const spec = YAML.parse(await (await request.get(`${BASE}/_admin/api/openapi.yaml`)).text());
+    delete spec.paths["/mocks/{id}"].put;
+    const calls = [];
+    const stub = http.createServer((req, res) => {
+      calls.push(`${req.method} ${req.url}`);
+      if (req.method === "GET" && req.url === "/_admin/api/info") {
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(realInfo));
+      } else if (req.method === "GET" && req.url === "/_admin/api/openapi.yaml") {
+        res.writeHead(200, { "content-type": "application/yaml" }).end(YAML.stringify(spec));
+      } else {
+        res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ message: "unexpected" }));
+      }
+    });
+    await new Promise((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    try {
+      const incomplete = new AgentSetup(request, `http://127.0.0.1:${stub.address().port}`);
+      await expect(incomplete.connect({ mocksDir: MOCKS_DIR })).rejects.toMatchObject({ code: "CONTRACT_UNVERIFIABLE" });
+      expect(calls, "solo letture, nessuna mutazione").toEqual(["GET /_admin/api/info", "GET /_admin/api/openapi.yaml"]);
+    } finally {
+      await new Promise((resolve) => stub.close(resolve));
+    }
 
     // Una scrittura rifiutata dal motore porta il suo codice.
     const setup = await connect(request);
