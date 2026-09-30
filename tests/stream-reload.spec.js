@@ -215,6 +215,8 @@ test.describe("stream e diagnostica durante i reload", () => {
   );
 
   let ids;
+  // Errori JavaScript della pagina, anche dai callback degli stream dopo la chiusura.
+  let pageErrors;
 
   test.beforeAll(async ({ request }) => {
     const info = await adminJson(request, BASE, "/info");
@@ -230,20 +232,24 @@ test.describe("stream e diagnostica durante i reload", () => {
   test.beforeEach(async ({ page, request }) => {
     restoreSeedFiles();
     await settleOnSeed(request, ids);
+    pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
     await page.goto("/");
   });
 
   // Anche dopo un fallimento: prima si chiudono le connessioni del browser, poi si ripristinano
   // i file e si attende il seed stabile, così il test successivo (o un retry) parte pulito.
+  // Solo alla fine si controlla la pagina: gli eventi di chiusura arrivano dopo wsCloseAll.
   test.afterEach(async ({ page, request }) => {
     await page
-      .evaluate(() => {
+      .evaluate(async () => {
         window.sseCloseAll();
-        window.wsCloseAll();
+        await window.wsCloseAll();
       })
       .catch(() => {});
     restoreSeedFiles();
     await settleOnSeed(request, ids);
+    expect(pageErrors, "nessun errore JavaScript nella pagina, chiusure comprese").toEqual([]);
   });
 
   test("descrizione, variante inattiva ed endpoint estraneo cambiati via API non toccano gli stream aperti", async ({ page, request }) => {
@@ -276,9 +282,10 @@ test.describe("stream e diagnostica durante i reload", () => {
     await adminSend(request, BASE, "PUT", `/mocks/${ids.other}/responses/001.response.json`, { body: { version: 2 } });
     expect(await servedJson(request, "/stream-other"), "la modifica estranea è servita").toEqual({ version: 2 });
 
+    // /runtime/status conserva solo l'ultimo tentativo: l'eco del watcher può aver già sostituito
+    // quello delle mutazioni, quindi qui si verifica l'avanzamento, non la causa.
     const after = await runtimeStatus(request);
     expect(after.lastAttempt.id, "le mutazioni hanno ricaricato il runtime").toBeGreaterThan(before.lastAttempt.id);
-    expect(after.lastAttempt.reasons).toContain("admin");
 
     await expectSsePreserved(page, request, ids, original.sse);
     await expectWsPreserved(page, request, ids, original.ws);

@@ -137,21 +137,33 @@
     // WebSocket NOMINATE per i test a più connessioni (es. una regola risponde solo a chi
     // ha parlato): si apre con wsOpen, si parla con wsSend, si legge il ricevuto con
     // wsReceived e si chiude con wsCloseAll. Lo stato vive nella pagina tra le evaluate.
+    // I callback usano la propria connessione, non il registro: dopo wsCloseAll il registro è
+    // vuoto (o contiene una connessione nuova con lo stesso nome) quando arriva la chiusura.
     window.__wsSockets = {};
     window.wsOpen = function wsOpen(name, url) {
       return new Promise((resolve) => {
         const socket = new WebSocket(url);
-        window.__wsSockets[name] = { socket, received: [], closed: null };
+        let markClosed;
+        const entry = {
+          socket,
+          received: [],
+          closed: null,
+          whenClosed: new Promise((done) => {
+            markClosed = done;
+          }),
+        };
+        window.__wsSockets[name] = entry;
         const timer = setTimeout(() => resolve({ opened: false }), 8000);
         socket.onopen = () => {
           clearTimeout(timer);
           resolve({ opened: true });
         };
         socket.onmessage = (event) => {
-          window.__wsSockets[name].received.push({ data: event.data, atMs: Date.now() });
+          entry.received.push({ data: event.data, atMs: Date.now() });
         };
         socket.onclose = (event) => {
-          window.__wsSockets[name].closed = { code: event.code, reason: event.reason };
+          entry.closed = { code: event.code, reason: event.reason };
+          markClosed();
         };
       });
     };
@@ -205,11 +217,18 @@
       }
       window.__sseSources = {};
     };
+    // Chiude tutte le WebSocket nominate; la promise si risolve quando le chiusure sono
+    // arrivate (al più dopo 3 secondi), così chi pulisce sa che nessun evento è ancora in volo.
     window.wsCloseAll = function wsCloseAll() {
-      for (const entry of Object.values(window.__wsSockets)) {
+      const entries = Object.values(window.__wsSockets);
+      window.__wsSockets = {};
+      for (const entry of entries) {
         try { entry.socket.close(); } catch { /* già chiuso */ }
       }
-      window.__wsSockets = {};
+      return Promise.race([
+        Promise.all(entries.map((entry) => entry.whenClosed)),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
     };
 
     // Raccoglie expectedCount eventi da un flusso SSE, annotando QUANDO ciascuno arriva:
