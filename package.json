@@ -11,6 +11,8 @@
     "test:headed": "playwright test --headed"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1"
+    "@playwright/test": "^1.61.1",
+    "ajv": "^8.20.0",
+    "yaml": "^2.9.1"
   }
 }

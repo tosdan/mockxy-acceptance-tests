@@ -1,0 +1,124 @@
+# Checklist — Integrazione dei test di accettazione dopo Mockxy 1.4.1
+
+## Obiettivo e perimetro
+
+Verificare dall'esterno le nuove garanzie introdotte da S0–S8 nella topologia reale **browser → immagine Docker di Mockxy → backend**. La suite attuale copre già proxy, CORS, cookie, sequence, console e stato condiviso; questa checklist aggiunge scenari di sistema, senza duplicare le matrici di validazione, CRUD e cache dei test interni.
+
+Baseline: motore `v1.4.1`. Dopo la verifica della baseline, la CI continua a seguire il ref del motore previsto dai workflow, normalmente `main`: non fissare permanentemente la suite alla 1.4.1.
+
+Riferimenti:
+
+- [Perimetro e avvio della suite](README.md).
+- [Piano implementato, contratti §13 C0–C8](../mockxy/docs/progetto/PIANO-PILOTAGGIO-DA-AGENT.md).
+- [Contratto OpenAPI distribuito](../mockxy/src/admin/admin-api.openapi.yaml), disponibile anche attraverso `GET /_admin/api/openapi.yaml`.
+- Guide ADMIN-API e RESPONSE IT/EN del motore, per i comportamenti pubblici.
+
+Questa checklist non introduce nuovi contratti del server. Se durante l'implementazione emerge una divergenza, documentarla e sottoporla alla review; non adattare silenziosamente l'asserzione al comportamento osservato.
+
+## Avanzamento e review
+
+Opus implementa e aggiorna le evidenze; Codex fa la code review delle PR; Opus applica le eventuali correzioni e richiede un nuovo giro. Le decisioni di prodotto restano all'utente.
+
+| Passo | Priorità | Stato | Evidenze: PR, verifiche e review |
+|---|---|---|---|
+| T0 — Isolamento e infrastruttura | Prerequisito | In review (base) | PR T0+T1: istanza `mockxy-discovery`, client admin `tests/admin-client.js`, modello di proprietà dello stato nel README. L'istanza watcher amministrabile arriva con T2 e l'uso del project di riavvio con T4, dove servono. |
+| T1 — Discovery e accesso nell'immagine distribuita | Alta | In review | PR T0+T1: `tests/discovery.spec.js`, 8 test (7 solo HTTP su Chromium, 1 di accesso cross-origin sui tre browser). Motore `7456cdc` (codice identico a `v1.4.1`). Suite completa verde: chromium 71, firefox 51 (+20 skip), webkit 51 (+20 skip), chromium-stack-mutating 1; nuovi test ripetuti 5 volte senza retry, verdi. Controprove nella PR. |
+| T2 — Stream, reload e diagnostica | Alta | Da iniziare | — |
+| T3 — Setup ripetibile tramite API, browser e Monitor | Alta | Da iniziare | — |
+| T4 — Configurazione effimera e connessioni esistenti | Media | Da iniziare | — |
+| T5 — Cattura e riproduzione del traffico | Media | Da iniziare | — |
+
+- [ ] Procedere con PR reviewabili: T0 può accompagnare T1; separare poi T2, T3, T4 e T5, salvo motivata diversa suddivisione.
+- [ ] Per ogni PR riportare scenari coperti, test eseguiti, coppia commit della suite / commit del motore e limiti o verifiche mancanti.
+- [ ] Registrare gli esiti della review e delle correzioni nelle evidenze del passo.
+- [ ] Segnare un passo completato dopo merge, criteri soddisfatti, verifiche e documentazione aggiornate. CI verde da sola non prova la copertura dei criteri.
+
+## T0 — Isolamento e infrastruttura
+
+- [x] Predisporre un'istanza standalone amministrabile dedicata ai nuovi scenari, con seed minimo copiato in workspace scrivibile, preferibilmente tmpfs. Impostare esplicitamente admin, allowlist Host, backend e CORS necessari.
+- [x] Preservare l'istanza principale e i suoi bind mount read-only. Non usare l'istanza `mockxy-sequence-admin` per cambiare impostazioni globali dei nuovi scenari.
+- [ ] Per il watcher usare una fixture di sviluppo dedicata, con admin esplicitamente abilitata e filesystem modificabile dal test; non condividere i file modificati da `dev-watch.spec.js`. _Con T2: un nuovo servizio di sviluppo con workspace proprio, `mockxy-dev` resta com'è._
+- [x] Allineare nuove istanze in `docker-compose.yml`, `tests/stack.js` e `tests/global-setup.js`; ogni servizio ha un healthcheck che verifica il serving effettivo di una rotta di fixture.
+- [x] Definire chi possiede ogni stato mutabile. I test che condividono configurazione, Monitor o file devono essere serializzati oppure usare istanze isolate. Limitarsi a Chromium non serializza file diversi con `fullyParallel: true`.
+- [ ] Eseguire i casi che riavviano o ricreano container senza concorrenza con altri test: seguire il modello del project `chromium-stack-mutating`, includendo la serializzazione fra i suoi stessi test quando necessaria. _Regola documentata nel README; si applica con T4._
+- [x] Eseguire sui tre browser gli scenari di semantica browser compatibili con l'isolamento scelto. Documentare quelli eseguiti solo su Chromium e il motivo.
+- [x] Ogni test prepara esplicitamente lo stato da cui dipende; il cleanup chiude connessioni e ripristina le fixture anche dopo un fallimento. Un retry non deve trovare residui del tentativo precedente. _Regola documentata nel README; T1 non muta stato, i passi successivi la applicano ai propri cleanup._
+- [x] Per mutazioni e discovery usare il client HTTP amministrativo di Playwright/Node. Le chiamate applicative partono dal browser reale; non rendere l'admin API leggibile cross-origin per facilitare i test.
+
+**Completamento:** stack avviabile da checkout pulito, suite esistente ancora verde e nessuna nuova dipendenza d'ordine implicita tra test.
+
+## T1 — Discovery e accesso nell'immagine distribuita
+
+- [x] Nell'immagine standalone con admin abilitata leggere `/info`, `/config`, `/runtime/status` e `/openapi.yaml` attraverso `/_admin/api`.
+- [x] Verificare versione del checkout costruito e coerenza di `runtimeId` tra le risposte JSON. Non hardcodificare `1.4.1` nei test destinati a seguire `main`.
+- [x] Verificare che `/info` riporti i percorsi del workspace dentro il container e l'indirizzo effettivo del listener. La porta interna può differire da quella pubblicata sull'host.
+- [x] Verificare che `/config` rappresenti le impostazioni dichiarate dalla fixture, con `startup`, `effective`, `overrides` e `persisted: false` coerenti.
+- [x] Scaricare e interpretare lo spec YAML dal container; verificare il contratto delle rotte usate dai nuovi scenari. Il test non deve recuperare lo spec dal checkout host per compensare un file assente nell'immagine.
+- [x] Sull'istanza standalone con admin disabilitata verificare `404` sulle quattro rotte, anche in presenza del proxy fallback.
+- [x] Estendere le prove di accesso: un Host non consentito riceve `403`; il browser sull'origine del client non può leggere le nuove rotte admin, anche quando CORS è attivo per il traffico applicativo.
+
+**Completamento:** discovery utilizzabile dall'artefatto distribuito e accesso amministrativo confinato come previsto. Non serve ricopiare tutta la matrice degli schemi dei test interni.
+
+## T2 — Stream, reload e diagnostica
+
+- [ ] Aprire SSE e WebSocket dal browser e attendere la conferma che entrambe le connessioni siano effettivamente registrate nelle console.
+- [ ] Modificare la descrizione, preparare una variante realmente inattiva sullo stesso endpoint e modificare un endpoint estraneo: le connessioni originali restano aperte e il copione non riparte.
+- [ ] Rilevare le riconnessioni nascoste di EventSource: confrontare l'identità della connessione in console e gli eventi di apertura/errore, oltre ai messaggi ricevuti. Ricevere messaggi dopo il reload, da solo, non dimostra la preservazione.
+- [ ] Modificare il copione attivo SSE e verificare la chiusura della connessione originale SSE, lasciando aperta la WS; fare la verifica simmetrica cambiando il comportamento WS.
+- [ ] Sul servizio con watcher verificare che una modifica estranea e il suo reload non interrompano lo stream. Attendere il tentativo concluso, non un numero fisso di reload: API e watcher possono aggregare le cause.
+- [ ] Tramite filesystem rendere illeggibile una nuova definizione di stream selezionata: il runtime mantiene lo stream precedente, `/runtime/status` dichiara `degraded` e `serving: retained`, push e stato della console continuano a funzionare sulla definizione servita.
+- [ ] Corrompere il sorgente di un handler già caricato: il browser continua a ricevere la risposta precedente e la diagnostica segnala il mantenimento. Correggere il sorgente e verificare nuova risposta, rimozione dell'errore e aggiornamento della revisione `diagnostics`.
+- [ ] Ripristinare tutti i file e chiudere le connessioni anche se un'asserzione fallisce. Usare attese con scadenza per il watcher, senza modificare il codice del motore o iniettare errori nei suoi moduli.
+
+**Completamento:** la continuità degli stream e la diagnostica sono dimostrate su rete e filesystem reali, senza che la riconnessione automatica mascheri una regressione.
+
+## T3 — Setup ripetibile tramite API, browser e Monitor
+
+- [ ] Predisporre un endpoint statico e uno sequence con ID e filename risolti dal catalogo, senza scegliere il bersaglio tramite titolo o selezione corrente.
+- [ ] L'helper legge discovery e configurazione, verifica il workspace atteso e dichiara via API tutte le impostazioni da cui dipende la prova: selezioni, abilitazioni, Proxy All, ritardi, templating e configurazione runtime pertinente.
+- [ ] Preparare una variante con `select: false`; leggerla per filename e verificare che preparazione e lettura non modifichino risposta corrente, selezione o cursore della sequence. Una variante usata come step della sequence selezionata è attiva: non usarla come esempio di preparazione inattiva.
+- [ ] Attivare esplicitamente la variante desiderata, abilitare gli endpoint, disattivare Proxy All e resettare la sequence. Il successo della mutazione è la barriera di applicazione: non aggiungere sleep per aspettare l'eco del watcher.
+- [ ] Eseguire lo stesso setup e le stesse asserzioni browser in tre condizioni: alternativa selezionata e sequence consumata; endpoint disabilitati e Proxy All attivo; ripetizione immediata del setup senza ripristino.
+- [ ] La pagina del client usa fetch reali verso Mockxy e verifica contenuto e ordine dei risultati, inclusi i due step della sequence. Configurare CORS esplicitamente per l'origine nginx; non intercettare le risposte applicative con `page.route`.
+- [ ] Dopo il setup e prima dell'azione browser acquisire `view=page&since=latest`. Leggere le pagine successive riusando `runtimeId`, `generation`, `since` e gli stessi filtri; verificare `gap: false` su ogni pagina.
+- [ ] Correlare le voci per metodo/path e verificare gli esiti applicativi attesi. Non contare tutte le voci del Monitor: favicon, healthcheck e altro traffico accessorio non devono rendere la prova fragile.
+- [ ] Verificare una perdita osservabile: dopo clear del Monitor, il vecchio cursore produce `gap: true` con `gapReason: cleared`; l'helper non interpreta la risposta come assenza di traffico.
+- [ ] Aggiungere un solo scenario di concorrenza protetta: due client leggono la stessa revisione, il primo salva, il secondo riceve `409 REVISION_CONFLICT`; il primo contenuto resta intatto. Non duplicare la matrice completa dei token.
+- [ ] Le attese sul Monitor hanno una scadenza complessiva che limita anche le singole richieste e l'attraversamento di tutte le pagine. Errori di setup, conflitti e gap falliscono con diagnostica utile, senza retry ciechi delle scritture.
+
+**Completamento:** lo scenario produce lo stesso risultato partendo da stati diversi e il traffico osservato è attribuibile all'azione appena eseguita.
+
+## T4 — Configurazione effimera e connessioni esistenti
+
+- [ ] Sul servizio dedicato impostare un override, verificarlo con `GET /config` e verificare il comportamento dalla richiesta applicativa successiva; controllare anche l'avanzamento della revisione `config` in `/info`.
+- [ ] Cambiare `corsEnabled` e verificare dal browser l'accettazione o il blocco della risposta. Usare richieste/origini nuove o gestire esplicitamente la cache dei preflight per evitare risultati dovuti alla cache del browser.
+- [ ] Distinguere `set: { backendUrl: null }` da `unset: ["backendUrl"]`: il primo disattiva il backend, il secondo ripristina quello di avvio. Verificare il serving, non soltanto il JSON di configurazione.
+- [ ] Usare due backend distinguibili: una richiesta iniziata prima del cambio, ancora nel ritardo, raggiunge il vecchio backend; la richiesta successiva raggiunge il nuovo. Dimostrare che la prima è entrata nel motore prima del PATCH mediante una barriera osservabile, non assumendolo perché il fetch è stato appena avviato.
+- [ ] Aprire un tunnel WS verso il backend, cambiare `backendUrl` e verificare che il tunnel aperto continui sul backend originale e una nuova connessione usi quello nuovo.
+- [ ] Riavviare il servizio dedicato nel project isolato: cambia `runtimeId`, gli override spariscono e `effective` torna a `startup`. Con il cursore precedente il Monitor segnala `gapReason: runtime_changed`.
+- [ ] Preservare il test esistente della cache dei preflight che ricrea il container cambiando configurazione di avvio: il PATCH runtime è un caso aggiuntivo, non un sostituto.
+
+**Completamento:** gli override cambiano il traffico nuovo, preservano il ciclo delle richieste e connessioni esistenti e non sopravvivono al riavvio. Non occorre ripetere la validazione di tutte le nove chiavi.
+
+## T5 — Cattura e riproduzione del traffico
+
+- [ ] Generare dal browser una risposta riconoscibile del backend, con status, body e almeno un header significativo; trovare la cattura tramite cursore del Monitor e leggere la voce completa per ID e `runtimeId`.
+- [ ] Chiamare `POST /_admin/api/monitoring/requests/create-mocks` con `runtimeId`, ID catturato, `onConflict`, `selectAddedVariants: false` e `newEndpointEnabled: false` espliciti.
+- [ ] Leggere gli esiti per elemento anche con `201`: verificare scrittura e completezza della cattura. Un elemento non applicato non può essere trattato come scenario già attivo.
+- [ ] Verificare che il nuovo endpoint rimanga disabilitato e che prima dell'attivazione il browser continui a ricevere il backend.
+- [ ] Attivare il mock esplicitamente e verificare status, body e header dal browser. Dimostrare che il backend non è stato chiamato mediante contatore o altra evidenza del backend; uguaglianza del body da sola non prova il passaggio al mock.
+- [ ] Per un endpoint esistente, provare `add-variant` senza selezione: la variante aggiunta è identificabile e il comportamento attivo resta invariato fino all'attivazione esplicita.
+- [ ] Generare una cattura non ricostruibile dal backend reale, per esempio binaria: verificarne `captureOutcome: incomplete`, warning `INCOMPLETE_CAPTURE` e preparazione non attiva. Non presentare la bozza come replay fedele.
+- [ ] Nessun retry cieco della creazione dopo timeout o risposta persa: il test fallisce con dettagli sufficienti per ispezionare il catalogo. Non duplicare qui tutte le fixture di trasformazione già presenti nei test interni.
+
+**Completamento:** il traffico reale diventa un mock preparato senza attivazione implicita e il successivo replay è verificato attraverso il browser e il backend.
+
+## Verifica finale e consegna
+
+- [ ] Eseguire i test nuovi e la suite completa, annotando risultati per project e gli skip motivati. Verificare che i vecchi scenari restino coperti.
+- [ ] Ripetere i nuovi scenari senza retry automatici per controllare isolamento, cleanup e stabilità; non aumentare globalmente timeout o retry per nascondere interferenze.
+- [ ] Per ogni garanzia centrale dimostrare che la prova distingue comportamento corretto e scorretto, con una controprova mirata o un'altra evidenza equivalente. Rimuovere le alterazioni temporanee e annotare quali asserzioni rilevano la regressione.
+- [ ] Verificare la coppia suite / motore `v1.4.1` e il funzionamento della CI con il normale ref corrente. I workflow già costruiscono il motore e consumano questa suite: modificarli solo per esigenze concrete dei nuovi scenari.
+- [ ] Aggiornare il README: topologia, coperture, comandi e isolamento. Correggere riferimenti obsoleti senza introdurre conteggi dei test destinati a diventare subito vecchi.
+- [ ] Mantenere nel repository `mockxy` i test della GUI Angular, delle bozze e dell'upload corretto dalla #40: lo stack standalone di questa suite non contiene quella GUI.
+- [ ] Concludere con tutte le righe di avanzamento aggiornate, PR integrate, eventuali limiti espliciti e nessuna fixture versionata lasciata modificata dalle esecuzioni.
