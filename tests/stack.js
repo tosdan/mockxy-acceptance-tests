@@ -10,4 +10,5 @@ module.exports = {
   mockxySequenceAdminBaseUrl: "http://localhost:8040",
   mockxyDiscoveryBaseUrl: "http://localhost:8030",
   mockxyStreamBaseUrl: "http://localhost:8020",
+  mockxySetupBaseUrl: "http://localhost:8010",
 };

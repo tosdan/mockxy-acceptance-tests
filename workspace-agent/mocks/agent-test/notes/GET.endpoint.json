@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/agent-test/notes",
+  "description": "Risorsa per la scrittura concorrente protetta dalla revisione (T3)",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

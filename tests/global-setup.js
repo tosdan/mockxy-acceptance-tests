@@ -31,4 +31,8 @@ module.exports = async function globalSetup() {
     `${stack.mockxyStreamBaseUrl}/stream-other`,
     "Mockxy (istanza di sviluppo per gli stream durante i reload)"
   );
+  await assertReachable(
+    `${stack.mockxySetupBaseUrl}/agent-ready`,
+    "Mockxy (istanza dello scenario ripetibile via API)"
+  );
 };

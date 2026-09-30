@@ -42,6 +42,8 @@ Playwright (host) ──pilota──▶ browser       backend finto (node puro, 
                                                │   seed in tmpfs: discovery in sola lettura)
                   mockxy-stream (:8020) ─────┤  (immagine di SVILUPPO: watcher + admin, seed
                                                │   in tmpfs modificato con docker compose exec)
+                   mockxy-setup (:8010) ─────┤  (admin attiva, CORS spento all'avvio: lo
+                                               │   dichiara il setup ripetibile via API)
                     mockxy-toggle (:8060) ─────┘  (CORS commutabile a runtime dal test
                                                    della cache dei preflight)
 ```
@@ -100,6 +102,7 @@ comunque in parallelo, quindi due file non devono mutare lo stesso stato.
 | `mockxy-toggle` (:8060) | `preflight-cache` | il container, ricreato | project `chromium-stack-mutating`, dopo i tre browser |
 | `mockxy-discovery` (:8030) | nessuno: `discovery` la legge soltanto | nessuno (seed in tmpfs) | letture HTTP su Chromium, accesso cross-origin sui tre browser |
 | `mockxy-stream` (:8020) | `stream-reload` | file del tmpfs, connessioni SSE/WS e console | Chromium, in ordine in un solo worker; ogni test riparte dal seed |
+| `mockxy-setup` (:8010) | `agent-setup` | catalogo in tmpfs, modalità server, configurazione runtime, Monitor | Chromium, in ordine in un solo worker; i casi non ripristinano niente fra loro, ogni test dichiara lo stato da cui dipende |
 
 Regole per le istanze nuove:
 
@@ -123,6 +126,10 @@ il motore del browser non cambia l'esito.
 Per ripetere dei test che condividono un'istanza, aggiungere `--workers=1` a `--repeat-each`:
 altrimenti Playwright distribuisce le ripetizioni su più worker, che userebbero la stessa
 istanza nello stesso momento.
+
+Le istanze con seed in tmpfs montano la cartella del seed dall'host. Se un cambio di branch la
+rimuove e la ricrea, il container resta legato alla cartella cancellata e vede un seed vuoto:
+dopo un checkout che tocca `workspace-*/` conviene `docker compose up -d --force-recreate`.
 
 **Nota di versioning**: la suite testa l'immagine costruita dal checkout corrente di
 `../mockxy`. Dopo modifiche al motore serve `npm run stack:up` (ri-build) per testare la
@@ -200,6 +207,7 @@ invertito: qui è fisso il commit della suite e si sceglie il motore, lì il con
 | Latenza (`delay.spec.js`) | ritardo globale sui mock senza `delayMs` proprio e, con `npm_config_delay_all`, sulle richieste proxate; contrasto senza ritardo (minimo su più tentativi, robusto alla contesa) |
 | Discovery (`discovery.spec.js`) | nell'immagine standalone: `/info`, `/config`, `/runtime/status` e `/openapi.yaml` letti dal container e validati sugli schemi dello spec servito (non quello del checkout host); versione del checkout costruito e `runtimeId` coerente; workspace e listener interni al container; `/config` uguale alle impostazioni dichiarate nel compose, senza override; operazioni e campi usati dagli scenari agent/API presenti nello spec; con admin spenta `404` dal motore anche col proxy fallback, `403` su Host estraneo, rotte opache al browser cross-origin anche con CORS attivo |
 | Stream durante i reload (`stream-reload.spec.js`) | immagine di sviluppo con watcher e admin, file modificati nel container: SSE e WS aperte dal browser sopravvivono a descrizione, variante inattiva ed endpoint estraneo cambiati via API e a una modifica estranea vista dal watcher, senza riconnessioni nascoste (identità in console, aperture ed errori di EventSource, copione non ripetuto, push ricevuto); il copione SSE o WS cambiato chiude solo la connessione interessata; una nuova definizione SSE illeggibile lascia servito lo stream precedente (`degraded`, `serving: retained`, console e push funzionanti); un handler dal sorgente rotto resta servito finché la correzione non rimuove l'errore, con la revisione `diagnostics` che avanza |
+| Setup ripetibile (`agent-setup.spec.js`) | helper esterno (`tests/agent-setup.js`) che verifica contratto servito e workspace, dichiara via `PATCH /config` CORS e ritardi, prepara i contenuti con la revisione letta, poi attiva e azzera; stesso esito da tre stati (alternativa selezionata, sequence consumata, ritardi e CORS spento; endpoint disabilitati e Proxy All; setup ripetuto senza ripristino), con fetch reali dalla pagina nginx e traffico letto a pagine dal Monitor dopo un cursore `since=latest`, senza gap; variante con `select: false` che non cambia risposta, selezione né cursore della sequence; `409 REVISION_CONFLICT` fra due client sulla stessa revisione; gap `cleared` dopo un clear del Monitor; errori di setup con codice, senza mutazioni né attese cieche |
 | Admin API (`admin-api.spec.js`) | catalogo servito dal container, guardia DNS-rebinding (403 su Host estraneo, mock non filtrati), vettore CSRF text/plain respinto con 415 senza creare nulla, risposte admin opache al JS cross-origin anche con CORS attivo |
 | Cache preflight (`preflight-cache.spec.js`) | il caveat di docs/CORS.md reso osservabile: a CORS spento a metà corsa, un preflight in cache fa ancora PARTIRE la richiesta (il backend la riceve, la risposta è bloccata), un contesto browser fresco non la manda proprio — col contatore del backend come discriminante |
 
@@ -209,7 +217,7 @@ Il backlog iniziale è completato. Gli scenari del pilotaggio da agent (motore 1
 tracciati in [CHECKLIST-ACCEPTANCE-v1.4.1.md](CHECKLIST-ACCEPTANCE-v1.4.1.md). Possibili
 estensioni future:
 
-- **Monitor via admin API** — con l'admin ora esposta sull'istanza principale: verificare
-  che il traffico dei test compaia nel monitor (e che i preflight automatici NON compaiano).
+- **Preflight fuori dal Monitor** — il traffico nel Monitor è coperto da `agent-setup`; resta da
+  verificare dall'esterno che i preflight CORS automatici NON vi compaiano.
 - **Limiti SameSite cross-site** — il caso documentato "site diversi su http" (cookie non
   inviati, token Authorization sì): richiede alias host distinti (es. `/etc/hosts` in CI).

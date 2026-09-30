@@ -43,10 +43,14 @@ function writeWorkspaceFile(relativePath, content) {
   execInStream(`cat > "/workspace/mocks/${relativePath}"`, content);
 }
 
-/** Riporta il workspace al seed: ricopia i file e toglie quelli aggiunti dai test. */
+/**
+ * Riporta il workspace al seed: ricopia i file e toglie quelli aggiunti dai test. Un seed vuoto
+ * (per esempio un bind mount rimasto legato a una cartella ricreata sull'host) fa fallire il
+ * ripristino invece di svuotare il workspace: il container va ricreato.
+ */
 function restoreSeedFiles() {
   execInStream(
-    'cp -R /seed/. /workspace/mocks/ && cd /workspace/mocks && find . -type f | while read -r file; do [ -e "/seed/$file" ] || rm -f "$file"; done'
+    '[ -n "$(ls -A /seed)" ] || { echo "seed vuoto in /seed: ricreare il container mockxy-stream" >&2; exit 1; } && cp -R /seed/. /workspace/mocks/ && cd /workspace/mocks && find . -type f | while read -r file; do [ -e "/seed/$file" ] || rm -f "$file"; done'
   );
 }
 

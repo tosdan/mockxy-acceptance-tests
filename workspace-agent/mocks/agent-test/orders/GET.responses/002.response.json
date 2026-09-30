@@ -1,0 +1,8 @@
+{
+  "type": "mock",
+  "title": "Alternativa",
+  "status": 503,
+  "headers": { "content-type": "application/json" },
+  "delayMs": 0,
+  "body": { "error": "unavailable" }
+}

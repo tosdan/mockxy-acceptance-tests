@@ -1,0 +1,9 @@
+{
+  "type": "sequence",
+  "title": "Sequence da preparare",
+  "steps": [
+    { "response": "002.response.json", "times": 2 },
+    { "response": "001.response.json", "times": 1 }
+  ],
+  "onEnd": "loop"
+}
