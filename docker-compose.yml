@@ -109,6 +109,40 @@ services:
       - /workspace/mocks
       - /workspace/files
 
+  # Istanza della discovery amministrativa (T1): stessa immagine standalone, admin attiva e le
+  # nove impostazioni di runtime dichiarate tutte qui, perché il test confronta GET /config con
+  # questa fixture (tests/discovery.spec.js le rispecchia). Il seed è copiato in tmpfs come per
+  # mockxy-sequence-admin. Proprietario: solo discovery.spec.js, che la legge senza modificarla;
+  # gli scenari che mutano configurazione, catalogo o Monitor usano istanze proprie.
+  mockxy-discovery:
+    image: mockxy-standalone-under-test
+    depends_on:
+      - mockxy
+      - backend
+    healthcheck:
+      <<: *healthcheck-hello
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/agent-ready"]
+    environment:
+      ADMIN_API_ENABLED: "true"
+      ADMIN_ALLOWED_HOSTS: "localhost"
+      BACKEND_URL: "http://backend:9000"
+      PROXY_FALLBACK_ENABLED: "true"
+      CORS_ENABLED: "true"
+      MOCKXY_DELAY: "25"
+      MOCKXY_DELAY_ALL: "false"
+      CASE_INSENSITIVE_FILTERS: "false"
+      ADAPT_PROXY_COOKIES: "true"
+      REWRITE_PROXY_REDIRECTS: "false"
+      REQUEST_TIMEOUT_MS: "4321"
+    command: ["sh", "-c", "cp -R /seed/. /workspace/mocks/ && exec node index.js"]
+    ports:
+      - "8030:3000"
+    volumes:
+      - ./workspace-agent/mocks:/seed:ro
+    tmpfs:
+      - /workspace/mocks
+      - /workspace/files
+
   # Istanza "commutabile" per il test della cache dei preflight: il test la ricrea a metà
   # corsa con TOGGLE_CORS_ENABLED=false e poi la ripristina. Dedicata: il riavvio non deve
   # toccare le istanze condivise dagli altri test.

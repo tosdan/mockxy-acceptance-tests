@@ -23,4 +23,8 @@ module.exports = async function globalSetup() {
     `${stack.mockxySequenceAdminBaseUrl}/sequence-admin`,
     "Mockxy (istanza sequence amministrabile)"
   );
+  await assertReachable(
+    `${stack.mockxyDiscoveryBaseUrl}/agent-ready`,
+    "Mockxy (istanza della discovery amministrativa)"
+  );
 };

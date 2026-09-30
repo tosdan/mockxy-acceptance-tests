@@ -38,6 +38,8 @@ Playwright (host) ──pilota──▶ browser       backend finto (node puro, 
                                                │   workspace-watch/ montato scrivibile)
                     mockxy-delay (:8050) ─────┤  (ritardo globale 600ms, anche sul proxy)
            mockxy-sequence-admin (:8040) ─────┤  (workspace in tmpfs, CRUD sequence isolato)
+               mockxy-discovery (:8030) ─────┤  (admin attiva, nove impostazioni dichiarate,
+                                               │   seed in tmpfs: discovery in sola lettura)
                     mockxy-toggle (:8060) ─────┘  (CORS commutabile a runtime dal test
                                                    della cache dei preflight)
 ```
@@ -78,6 +80,39 @@ stateful (sequence, shared runtime state, hot reload e cache dei preflight) si a
 Chromium perché mutano stato condiviso mentre i project girano in parallelo. Per il primo run:
 `npx playwright install chromium firefox webkit`. In CI c'è un retry automatico
 (`retries: 1` solo con `CI` impostata); in locale la flakiness resta visibile.
+
+## Isolamento e stato mutabile
+
+Ogni stato che un test può cambiare ha un proprietario: i test che lo condividono girano in
+serie, gli altri usano un'istanza propria. Limitarsi a Chromium evita solo l'esecuzione
+parallela dello stesso file nei tre project: con `fullyParallel: true` file diversi girano
+comunque in parallelo, quindi due file non devono mutare lo stesso stato.
+
+| Istanza | Proprietario dello stato mutabile | Stato mutabile | Esecuzione |
+|---|---|---|---|
+| `mockxy` (:8080) | `sequences`, `shared-state`, push di `sse-mock`/`ws-mock` | solo stato runtime (cursori, stato condiviso, broadcast); workspace read-only | test stateful su Chromium, in serie nel loro file; il resto sui tre browser |
+| `mockxy-raw` (:8090) | nessuno | nessuno | tre browser |
+| `mockxy-delay` (:8050) | nessuno | nessuno | tre browser |
+| `mockxy-sequence-admin` (:8040) | `sequences` | catalogo in tmpfs, cursori | Chromium, in serie |
+| `mockxy-dev` (:8070) | `dev-watch` | file di `workspace-watch/` | Chromium |
+| `mockxy-toggle` (:8060) | `preflight-cache` | il container, ricreato | project `chromium-stack-mutating`, dopo i tre browser |
+| `mockxy-discovery` (:8030) | nessuno: `discovery` la legge soltanto | nessuno (seed in tmpfs) | letture HTTP su Chromium, accesso cross-origin sui tre browser |
+
+Regole per le istanze nuove:
+
+- una nuova istanza amministrabile copia un seed minimo in tmpfs (`command` con `cp -R /seed/.`)
+  e dichiara esplicitamente admin, allowlist Host, backend e CORS di cui ha bisogno;
+- ogni istanza è allineata in `docker-compose.yml` (con un healthcheck che verifica il serving
+  di una rotta di fixture), `tests/stack.js` e `tests/global-setup.js`;
+- i test che riavviano o ricreano container vanno nel project `chromium-stack-mutating`;
+- le mutazioni e le letture dell'admin API passano dal client HTTP di Playwright
+  (`tests/admin-client.js`), mai dal browser: l'admin API non è leggibile cross-origin e non
+  va resa tale per i test;
+- ogni test prepara lo stato da cui dipende e il cleanup lo ripristina anche dopo un
+  fallimento, così un retry non trova residui.
+
+I test che usano solo il client HTTP (senza semantica browser) girano una volta, su Chromium:
+il motore del browser non cambia l'esito.
 
 **Nota di versioning**: la suite testa l'immagine costruita dal checkout corrente di
 `../mockxy`. Dopo modifiche al motore serve `npm run stack:up` (ri-build) per testare la
@@ -130,7 +165,7 @@ permesso `contents: read` su `mockxy`, salvato nei secrets di questo repo come
 Su fallimento il workflow allega i log dei container e il report Playwright come artifact.
 
 Esiste anche il **workflow speculare nel repo del motore** (`acceptance` in
-`mockxy`): a ogni push sul motore lancia questa suite (al suo `master`, o al ref
+`mockxy`): a ogni push sul motore lancia questa suite (al suo `main`, o al ref
 scelto col dispatch) contro quel commit. I due workflow sono gemelli con il pinning
 invertito: qui è fisso il commit della suite e si sceglie il motore, lì il contrario.
 
@@ -153,12 +188,15 @@ invertito: qui è fisso il commit della suite e si sceglie il motore, lì il con
 | Contenuti (`content.spec.js`) | risposta gzip del backend integra al browser, mock file-backed binario byte-per-byte (firma PNG verificata anche dal browser), flusso SSE proxato consegnato progressivamente (timestamp distanziati ⇒ niente buffering) |
 | Hot reload (`dev-watch.spec.js`) | immagine di sviluppo: modifica di un mock sul filesystem host applicata a caldo dal watcher nel container (bind mount scrivibile + polling), con ripristino idempotente della fixture |
 | Latenza (`delay.spec.js`) | ritardo globale sui mock senza `delayMs` proprio e, con `npm_config_delay_all`, sulle richieste proxate; contrasto senza ritardo (minimo su più tentativi, robusto alla contesa) |
+| Discovery (`discovery.spec.js`) | nell'immagine standalone: `/info`, `/config`, `/runtime/status` e `/openapi.yaml` letti dal container e validati sugli schemi dello spec servito (non quello del checkout host); versione del checkout costruito e `runtimeId` coerente; workspace e listener interni al container; `/config` uguale alle impostazioni dichiarate nel compose, senza override; operazioni e campi usati dagli scenari agent/API presenti nello spec; con admin spenta `404` dal motore anche col proxy fallback, `403` su Host estraneo, rotte opache al browser cross-origin anche con CORS attivo |
 | Admin API (`admin-api.spec.js`) | catalogo servito dal container, guardia DNS-rebinding (403 su Host estraneo, mock non filtrati), vettore CSRF text/plain respinto con 415 senza creare nulla, risposte admin opache al JS cross-origin anche con CORS attivo |
 | Cache preflight (`preflight-cache.spec.js`) | il caveat di docs/CORS.md reso osservabile: a CORS spento a metà corsa, un preflight in cache fa ancora PARTIRE la richiesta (il backend la riceve, la risposta è bloccata), un contesto browser fresco non la manda proprio — col contatore del backend come discriminante |
 
 ## Idee per i prossimi passi
 
-Il backlog iniziale è completato. Possibili estensioni future:
+Il backlog iniziale è completato. Gli scenari del pilotaggio da agent (motore 1.4.1) sono
+tracciati in [CHECKLIST-ACCEPTANCE-v1.4.1.md](CHECKLIST-ACCEPTANCE-v1.4.1.md). Possibili
+estensioni future:
 
 - **Monitor via admin API** — con l'admin ora esposta sull'istanza principale: verificare
   che il traffico dei test compaia nel monitor (e che i preflight automatici NON compaiano).
