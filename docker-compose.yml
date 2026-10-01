@@ -90,13 +90,15 @@ services:
 
   # Istanza sequence amministrabile: all'avvio copia una fixture minima in tmpfs, quindi ogni
   # test può esercitare il CRUD reale senza modificare i file versionati sul filesystem host.
+  # L'healthcheck usa una rotta propria: interroga l'istanza ogni secondo anche dopo l'avvio, e
+  # su /sequence-admin consumerebbe gli step della sequence che i test stanno osservando.
   mockxy-sequence-admin:
     image: mockxy-standalone-under-test
     depends_on:
       - mockxy
     healthcheck:
       <<: *healthcheck-hello
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/sequence-admin"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/sequence-admin-ready"]
     environment:
       ADMIN_API_ENABLED: "true"
       ADMIN_ALLOWED_HOSTS: "localhost"

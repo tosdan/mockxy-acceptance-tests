@@ -126,7 +126,9 @@ Regole per le istanze nuove:
 - una nuova istanza amministrabile copia un seed minimo in tmpfs (`command` con `cp -R /seed/.`)
   e dichiara esplicitamente admin, allowlist Host, backend e CORS di cui ha bisogno;
 - ogni istanza è allineata in `docker-compose.yml` (con un healthcheck che verifica il serving
-  di una rotta di fixture), `tests/stack.js` e `tests/global-setup.js`;
+  di una rotta di fixture), `tests/stack.js` e `tests/global-setup.js`. L'healthcheck continua a
+  interrogare l'istanza ogni secondo anche dopo l'avvio: la sua rotta non deve avere stato che i
+  test osservano (una sequence, un contatore), altrimenti ne consuma i passi;
 - i test che riavviano o ricreano container vanno in un project dedicato, dopo i project browser:
   `chromium-stack-mutating` (`preflight-cache`) e poi `chromium-config-restart`
   (`runtime-config-restart`), in catena, così non girano mai in concorrenza nemmeno fra loro;

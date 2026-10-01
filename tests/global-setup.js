@@ -20,7 +20,7 @@ module.exports = async function globalSetup() {
   await assertReachable(`${stack.mockxyToggleBaseUrl}/hello`, "Mockxy (istanza commutabile)");
   await assertReachable(`${stack.mockxyDelayBaseUrl}/hello`, "Mockxy (istanza con ritardo)");
   await assertReachable(
-    `${stack.mockxySequenceAdminBaseUrl}/sequence-admin`,
+    `${stack.mockxySequenceAdminBaseUrl}/sequence-admin-ready`,
     "Mockxy (istanza sequence amministrabile)"
   );
   await assertReachable(

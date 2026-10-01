@@ -131,6 +131,11 @@ Evidenze sulla suite del branch della verifica finale, con il motore `main` (`2b
 - [x] Ripetere i nuovi scenari senza retry automatici per controllare isolamento, cleanup e stabilità; non aumentare globalmente timeout o retry per nascondere interferenze.
 
   I nuovi file sui tre project browser, con `--repeat-each=3 --retries=0 --workers=1`: 90/90. Il project del riavvio ripetuto 2 volte: 6/6. Timeout e retry globali sono invariati.
+
+  La CI della PR finale ha segnalato un test instabile preesistente: «più sequence hanno cursori distinti» in `sequences.spec.js`, passato al retry. La causa era l'healthcheck di `mockxy-sequence-admin`, che interroga ogni secondo proprio `/sequence-admin` e ne consumava gli step fra una selezione e la lettura del cursore.
+  - **Riprodotto:** 1 fallimento su 40 ripetizioni.
+  - **Corretto:** rotta di prontezza dedicata `/sequence-admin-ready`, con la regola scritta nel README.
+  - **Verificato:** senza test in corso il Monitor non registra più richieste a `/sequence-admin`; poi 40/40 sul test e 30/30 sul file ripetuto.
 - [x] Per ogni garanzia centrale dimostrare che la prova distingue comportamento corretto e scorretto, con una controprova mirata o un'altra evidenza equivalente. Rimuovere le alterazioni temporanee e annotare quali asserzioni rilevano la regressione.
 
   Le controprove sono elencate per passo nelle evidenze e nelle PR #7–#11. Le alterazioni del motore sono state applicate solo ai container in esecuzione, poi ricreati dall'immagine.
