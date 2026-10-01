@@ -202,6 +202,33 @@ services:
       - /workspace/mocks
       - /workspace/files
 
+  # Istanza della cattura e riproduzione del traffico (T5): il traffico reale verso il backend
+  # diventa mock preparati via POST /monitoring/requests/create-mocks, senza attivazione
+  # implicita. Ogni test usa path propri sotto /capture/ e rimuove gli endpoint che ha creato.
+  # Proprietario: solo capture-replay.spec.js, in ordine in un solo worker (catalogo e Monitor).
+  mockxy-capture:
+    image: mockxy-standalone-under-test
+    depends_on:
+      - mockxy
+      - backend
+    healthcheck:
+      <<: *healthcheck-hello
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/agent-ready"]
+    environment:
+      ADMIN_API_ENABLED: "true"
+      ADMIN_ALLOWED_HOSTS: "localhost"
+      BACKEND_URL: "http://backend:9000"
+      PROXY_FALLBACK_ENABLED: "true"
+      CORS_ENABLED: "true"
+    command: ["sh", "-c", "cp -R /seed/. /workspace/mocks/ && exec node index.js"]
+    ports:
+      - "8015:3000"
+    volumes:
+      - ./workspace-agent/mocks:/seed:ro
+    tmpfs:
+      - /workspace/mocks
+      - /workspace/files
+
   # Istanza "commutabile" per il test della cache dei preflight: il test la ricrea a metà
   # corsa con TOGGLE_CORS_ENABLED=false e poi la ripristina. Dedicata: il riavvio non deve
   # toccare le istanze condivise dagli altri test.

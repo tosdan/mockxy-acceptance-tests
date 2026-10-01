@@ -39,7 +39,7 @@ async function restoreStartup(request) {
 }
 
 async function arrivals(request, backendBaseUrl, identityPath) {
-  const response = await request.get(`${backendBaseUrl}/api/identity-arrivals?path=${encodeURIComponent(identityPath)}`);
+  const response = await request.get(`${backendBaseUrl}/api/arrivals?path=${encodeURIComponent(identityPath)}`);
   return (await response.json()).count;
 }
 

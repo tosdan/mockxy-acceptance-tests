@@ -25,6 +25,8 @@ const REQUIRED_OPERATIONS = [
   ["post", "/mocks/{id}/sequence/reset"],
   ["patch", "/server"],
   ["get", "/monitoring/requests"],
+  ["get", "/monitoring/requests/{id}"],
+  ["post", "/monitoring/requests/create-mocks"],
 ];
 
 class SetupError extends Error {
@@ -206,6 +208,33 @@ class AgentSetup {
     return result;
   }
 
+  /** La voce completa del Monitor, per ID e runtimeId del cursore da cui viene. */
+  async readMonitorEntry(id, runtimeId) {
+    const query = new URLSearchParams({ runtimeId });
+    const { item } = await this.read(`/monitoring/requests/${id}?${query}`, `Reading monitor entry ${id}`);
+    return item;
+  }
+
+  /**
+   * Crea mock dalle catture del Monitor con tutte le scelte esplicite. Una sola richiesta, mai
+   * ripetuta: il batch non è idempotente. Se la risposta si perde (timeout, connessione), l'esito
+   * è sconosciuto e l'errore lo dice, con quanto serve per ispezionare il catalogo.
+   */
+  async createMocksFromMonitor(runtimeId, ids, { onConflict, selectAddedVariants, newEndpointEnabled }, { timeout } = {}) {
+    const body = { runtimeId, ids, onConflict, selectAddedVariants, newEndpointEnabled };
+    let res;
+    try {
+      res = await this.call("POST", "/monitoring/requests/create-mocks", body, { timeout });
+    } catch (error) {
+      throw new SetupError("CREATE_OUTCOME_UNKNOWN", `The create-mocks response was lost (${error.message.split("\n")[0]}): inspect the catalog for ${ids.length} capture(s) before doing anything else; do not retry.`, { runtimeId, ids, onConflict });
+    }
+    if (res.status !== 201) {
+      const code = res.data?.details?.code ?? res.data?.code;
+      throw new SetupError("NOT_APPLIED", `Creating mocks from the monitor: ${res.status}${code ? ` ${code}` : ""} — ${res.data?.message ?? JSON.stringify(res.data)}`, res.data?.details);
+    }
+    return res.data;
+  }
+
   /** 6. Cursore del Monitor su "adesso", da prendere prima dell'azione del browser. */
   async monitorCursor(filters = {}) {
     const query = new URLSearchParams({ view: "page", since: "latest", ...filters });
@@ -272,4 +301,16 @@ class AgentSetup {
   }
 }
 
-module.exports = { AgentSetup, SetupError, REQUIRED_OPERATIONS };
+/**
+ * Esiti per elemento di una creazione dal Monitor: anche con 201 un elemento può non essere
+ * stato scritto (skipped, failed) e non va trattato come scenario pronto.
+ */
+function requireWritten(outcome) {
+  const notWritten = outcome.items.filter((item) => item.writeOutcome !== "created" && item.writeOutcome !== "variant_added");
+  if (notWritten.length > 0) {
+    throw new SetupError("NOT_APPLIED", `Not written: ${notWritten.map((item) => `${item.requestId} ${item.writeOutcome} (${item.captureOutcome})${item.error ? ` — ${item.error.message}` : ""}`).join("; ")}.`, { items: notWritten });
+  }
+  return outcome.items;
+}
+
+module.exports = { AgentSetup, SetupError, REQUIRED_OPERATIONS, requireWritten };
