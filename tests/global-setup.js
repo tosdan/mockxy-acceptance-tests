@@ -40,4 +40,8 @@ module.exports = async function globalSetup() {
     "Mockxy (istanza della configurazione effimera)"
   );
   await assertReachable(`${stack.backendBDirectBaseUrl}/api/ping`, "Il secondo backend (b)");
+  await assertReachable(
+    `${stack.mockxyCaptureBaseUrl}/agent-ready`,
+    "Mockxy (istanza della cattura e riproduzione del traffico)"
+  );
 };

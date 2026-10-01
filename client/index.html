@@ -25,7 +25,7 @@
         const headers = {};
         // Cross-origin il JS legge solo gli header safelisted + quelli in Expose-Headers:
         // riportiamo quelli che i test vogliono osservare.
-        for (const name of ["x-mock-source", "x-total-count", "content-type", "x-custom-options"]) {
+        for (const name of ["x-mock-source", "x-total-count", "content-type", "x-custom-options", "x-receipt-id"]) {
           const value = response.headers.get(name);
           if (value !== null) {
             headers[name] = value;

@@ -13,4 +13,5 @@ module.exports = {
   mockxyStreamBaseUrl: "http://localhost:8020",
   mockxySetupBaseUrl: "http://localhost:8010",
   mockxyConfigBaseUrl: "http://localhost:8005",
+  mockxyCaptureBaseUrl: "http://localhost:8015",
 };

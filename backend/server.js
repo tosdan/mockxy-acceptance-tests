@@ -38,23 +38,52 @@ function readBody(req) {
 // risposta bloccata (preflight in cache): solo la seconda incrementa il contatore.
 let trackedPostCount = 0;
 
-// Arrivi per path sotto /identity/: dicono se, e quando, una richiesta ha raggiunto QUESTO
-// backend (per esempio una richiesta ancora nel ritardo di Mockxy non è ancora arrivata).
-const identityArrivals = new Map();
+// Arrivi per path sotto /identity/ e /capture/: dicono se, e quando, una richiesta ha raggiunto
+// QUESTO backend (una richiesta ancora nel ritardo di Mockxy non è ancora arrivata; un mock
+// attivo non chiama il backend).
+const arrivals = new Map();
+function countArrival(pathname) {
+  const count = (arrivals.get(pathname) || 0) + 1;
+  arrivals.set(pathname, count);
+  return count;
+}
+
+// Primi byte di un PNG: un payload binario riconoscibile.
+const BINARY_PAYLOAD = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02, 0x03]);
 
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, OWN_ORIGIN);
   const route = `${req.method} ${requestUrl.pathname}`;
 
   if (req.method === "GET" && requestUrl.pathname.startsWith("/identity/")) {
-    identityArrivals.set(requestUrl.pathname, (identityArrivals.get(requestUrl.pathname) || 0) + 1);
+    countArrival(requestUrl.pathname);
     return sendJson(res, 200, { source: "backend", backend: BACKEND_ID, path: requestUrl.pathname });
   }
 
+  // Risposta riconoscibile da catturare e riprodurre: status non banale, body con il numero
+  // dell'arrivo su quel path e un header proprio, reso leggibile al JS cross-origin.
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/capture/receipt/")) {
+    const receipt = `r-${countArrival(requestUrl.pathname)}`;
+    return sendJson(res, 202, { source: "backend", receipt }, {
+      "x-receipt-id": receipt,
+      "access-control-expose-headers": "X-Receipt-Id",
+    });
+  }
+
+  // Risposta binaria: il Monitor non la ricostruisce, la cattura è incompleta.
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/capture/binary/")) {
+    countArrival(requestUrl.pathname);
+    res.writeHead(200, {
+      "content-type": "application/octet-stream",
+      "access-control-allow-origin": "https://frontend-di-staging.example",
+    });
+    return res.end(BINARY_PAYLOAD);
+  }
+
   switch (route) {
-    case "GET /api/identity-arrivals": {
+    case "GET /api/arrivals": {
       const arrivalPath = requestUrl.searchParams.get("path") || "";
-      return sendJson(res, 200, { backend: BACKEND_ID, path: arrivalPath, count: identityArrivals.get(arrivalPath) || 0 });
+      return sendJson(res, 200, { backend: BACKEND_ID, path: arrivalPath, count: arrivals.get(arrivalPath) || 0 });
     }
 
     case "GET /api/ping":
