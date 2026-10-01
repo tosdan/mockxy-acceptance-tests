@@ -26,12 +26,12 @@ Opus implementa e aggiorna le evidenze; Codex fa la code review delle PR; Opus a
 | T2 — Stream, reload e diagnostica | Alta | Completato | [#8](https://github.com/tosdan/mockxy-acceptance-tests/pull/8), integrata (`8dcec08`): `tests/stream-reload.spec.js`, 6 test su Chromium in un solo worker. Motore `7456cdc` (codice identico a `v1.4.1`), suite `b7de454`. Suite completa verde: chromium 77, firefox 51 (+26 skip), webkit 51 (+26 skip), chromium-stack-mutating 1; nuovi test ripetuti 5 volte senza retry (`--workers=1`), 30/30. Tre controprove sul motore alterato nel solo container, poi ricreato. **Divergenza da sottoporre alla review:** gli `id` delle connessioni SSE/WS sono numeri, lo spec li dichiara stringhe. Review Codex su `9e263ac`: P3 (callback WS che dopo `wsCloseAll` scrivevano nel registro svuotato, `TypeError` nella pagina) e P2 (causa `admin` pretesa sull'ultimo tentativo, che l'eco del watcher può sostituire), entrambi riprodotti e corretti; regressione sugli errori della pagina, che fallisce in 4 test su 6 con il client precedente. Divergenza risolta nel motore con [mockxy#41](https://github.com/tosdan/mockxy/pull/41), integrata: lo spec dichiara interi i quattro identificativi delle connessioni, con un test di contratto su connessioni reali. Secondo giro di review su `89df9c3`: positivo. |
 | T3 — Setup ripetibile tramite API, browser e Monitor | Alta | Completato | [#9](https://github.com/tosdan/mockxy-acceptance-tests/pull/9), integrata: `tests/agent-setup.spec.js` e helper `tests/agent-setup.js`, istanza `mockxy-setup` con CORS spento all'avvio; 6 test su Chromium in un solo worker. Motore `939d992` (`main`, dopo la #41), suite `b45bbd3`. Suite completa verde: chromium 83, firefox 51 (+32 skip), webkit 51 (+32 skip), chromium-stack-mutating 1; nuovi test ripetuti 5 volte senza retry (`--workers=1`), 30/30. Quattro controprove sul setup (CORS non dichiarato, reset mancante, modalità mock mancante, variante preparata selezionata). Review Codex su `d7ef868`: due P2, entrambi riprodotti e corretti. Il controllo iniziale del contratto ora copre tutte le operazioni usate, con una prova negativa: uno stub senza `PUT /mocks/{id}` dà `CONTRACT_UNVERIFIABLE` dopo le sole due letture. La preparazione inattiva confronta la risposta realmente servita mentre la bozza esiste; la controprova con la bozza servita fallisce su quell'asserzione. Secondo giro di review su `8744b6b`: 0 rilievi. |
 | T4 — Configurazione effimera e connessioni esistenti | Media | Completato | [#10](https://github.com/tosdan/mockxy-acceptance-tests/pull/10), integrata: `tests/runtime-config.spec.js` (4 test, Chromium in ordine) e `tests/runtime-config-restart.spec.js` (project `chromium-config-restart`, dopo `chromium-stack-mutating`); istanza `mockxy-config`, secondo backend `backend-b`, backend finto con identità e contatori per path. Barriera della richiesta in volo: riga `Request received.` nel log del container, poi contatore del backend a zero dopo il PATCH (proposta di Codex). Motore `939d992`, suite `b9c6195`. Suite completa verde: chromium 87, firefox 51 (+36 skip), webkit 51 (+36 skip), chromium-stack-mutating 1, chromium-config-restart 1; nuovi test ripetuti senza retry (`--workers=1`): 20/20 e riavvio 3/3. Due controprove. Review Codex su `713b61b`: un P2, riprodotto e corretto. Il test di riavvio non ripuliva gli override se falliva prima del riavvio; ora `withStartupRestored` prepara lo stato di avvio e lo ripristina anche dopo un fallimento, con attesa limitata. La regressione simula il comando Docker che fallisce e fallisce se si toglie il `finally`. Secondo giro su `ef24dac`: un P2 sul budget del cleanup, che condivideva il timeout del test. Ripristino spostato in hook con budget proprio (`testInfo.setTimeout`), in `tests/config-restore.js`. Due regressioni in un processo Playwright figlio: errore immediato, e scadenza con l'istanza in pausa per 20 s, oltre gli 8 s di budget normale. Togliendo l'estensione del budget, la seconda fallisce con gli override rimasti. Terzo giro su `139e994`: due P2 sulle regressioni, entrambi corretti. Il processo figlio usa una cartella temporanea propria (`outputDir`), verificata con un artefatto sentinella della suite. La guardia misura la pausa effettiva fra due marcatori: `docker compose pause` riuscito, e `unpause` riuscito dopo 20 s, possibile solo se il container era ancora in pausa. Tre controprove: senza `outputDir`, pausa reale di 1 s, hook senza budget. Quarto giro su `6732d36`: 0 rilievi. |
-| T5 — Cattura e riproduzione del traffico | Media | Completato | [#11](https://github.com/tosdan/mockxy-acceptance-tests/pull/11), integrata: `tests/capture-replay.spec.js` (4 test, Chromium in ordine), istanza `mockxy-capture`, helper `createMocksFromMonitor`/`readMonitorEntry`/`requireWritten` in `tests/agent-setup.js`, backend con risposte riconoscibili e binarie sotto `/capture/`. Motore `939d992`, suite `c8b9443`. Suite completa verde: chromium 91, firefox 51 (+40 skip), webkit 51 (+40 skip), chromium-stack-mutating 1, chromium-config-restart 3; nuovi test ripetuti senza retry (`--workers=1`): 20/20. Quattro controprove. Review Codex su `ffed4e0`: un P2. Il test della risposta persa poteva passare con un helper che ripete, perché il timeout di 1 ms può scadere prima dell'invio. Ora un proxy di test lascia completare la creazione sul motore reale e perde solo la risposta. Il test verifica una sola richiesta, il 201 perso e un endpoint con una variante; con un helper che ripete fallisce (2 richieste). Secondo giro su `204bec5`: 0 rilievi. Due osservazioni sul motore (descrizioni YAML troncate nello spec, `x-mock-source` copiato nei mock creati dalle catture) vanno in una piccola PR sul motore prima della verifica finale. |
+| T5 — Cattura e riproduzione del traffico | Media | Completato | [#11](https://github.com/tosdan/mockxy-acceptance-tests/pull/11), integrata: `tests/capture-replay.spec.js` (4 test, Chromium in ordine), istanza `mockxy-capture`, helper `createMocksFromMonitor`/`readMonitorEntry`/`requireWritten` in `tests/agent-setup.js`, backend con risposte riconoscibili e binarie sotto `/capture/`. Motore `939d992`, suite `c8b9443`. Suite completa verde: chromium 91, firefox 51 (+40 skip), webkit 51 (+40 skip), chromium-stack-mutating 1, chromium-config-restart 3; nuovi test ripetuti senza retry (`--workers=1`): 20/20. Quattro controprove. Review Codex su `ffed4e0`: un P2. Il test della risposta persa poteva passare con un helper che ripete, perché il timeout di 1 ms può scadere prima dell'invio. Ora un proxy di test lascia completare la creazione sul motore reale e perde solo la risposta. Il test verifica una sola richiesta, il 201 perso e un endpoint con una variante; con un helper che ripete fallisce (2 richieste). Secondo giro su `204bec5`: 0 rilievi. Due osservazioni sul motore (descrizioni YAML troncate nello spec, `x-mock-source` copiato nei mock creati dalle catture) risolte in [mockxy#42](https://github.com/tosdan/mockxy/pull/42) e [mockxy-skills#15](https://github.com/tosdan/mockxy-skills/pull/15), integrate; l'asserzione sul mock salvato è nella verifica finale. |
 
-- [ ] Procedere con PR reviewabili: T0 può accompagnare T1; separare poi T2, T3, T4 e T5, salvo motivata diversa suddivisione.
-- [ ] Per ogni PR riportare scenari coperti, test eseguiti, coppia commit della suite / commit del motore e limiti o verifiche mancanti.
-- [ ] Registrare gli esiti della review e delle correzioni nelle evidenze del passo.
-- [ ] Segnare un passo completato dopo merge, criteri soddisfatti, verifiche e documentazione aggiornate. CI verde da sola non prova la copertura dei criteri.
+- [x] Procedere con PR reviewabili: T0 può accompagnare T1; separare poi T2, T3, T4 e T5, salvo motivata diversa suddivisione.
+- [x] Per ogni PR riportare scenari coperti, test eseguiti, coppia commit della suite / commit del motore e limiti o verifiche mancanti.
+- [x] Registrare gli esiti della review e delle correzioni nelle evidenze del passo.
+- [x] Segnare un passo completato dopo merge, criteri soddisfatti, verifiche e documentazione aggiornate. CI verde da sola non prova la copertura dei criteri.
 
 ## T0 — Isolamento e infrastruttura
 
@@ -115,10 +115,47 @@ Opus implementa e aggiorna le evidenze; Codex fa la code review delle PR; Opus a
 
 ## Verifica finale e consegna
 
-- [ ] Eseguire i test nuovi e la suite completa, annotando risultati per project e gli skip motivati. Verificare che i vecchi scenari restino coperti.
-- [ ] Ripetere i nuovi scenari senza retry automatici per controllare isolamento, cleanup e stabilità; non aumentare globalmente timeout o retry per nascondere interferenze.
-- [ ] Per ogni garanzia centrale dimostrare che la prova distingue comportamento corretto e scorretto, con una controprova mirata o un'altra evidenza equivalente. Rimuovere le alterazioni temporanee e annotare quali asserzioni rilevano la regressione.
-- [ ] Verificare la coppia suite / motore `v1.4.1` e il funzionamento della CI con il normale ref corrente. I workflow già costruiscono il motore e consumano questa suite: modificarli solo per esigenze concrete dei nuovi scenari.
-- [ ] Aggiornare il README: topologia, coperture, comandi e isolamento. Correggere riferimenti obsoleti senza introdurre conteggi dei test destinati a diventare subito vecchi.
-- [ ] Mantenere nel repository `mockxy` i test della GUI Angular, delle bozze e dell'upload corretto dalla #40: lo stack standalone di questa suite non contiene quella GUI.
+Evidenze sulla suite del branch della verifica finale, con il motore `main` (`2b19401`, dopo mockxy#42) e con il tag `v1.4.1`.
+
+- [x] Eseguire i test nuovi e la suite completa, annotando risultati per project e gli skip motivati. Verificare che i vecchi scenari restino coperti.
+
+  Suite completa, motore `main`, senza retry: chromium 91, firefox 51, webkit 51, chromium-stack-mutating 1, chromium-config-restart 3. Nessun fallimento e nessun test instabile. I vecchi scenari restano tutti verdi.
+
+  Gli skip (40 per Firefox e 40 per WebKit) sono i test dichiarati solo Chromium:
+  - quelli stateful, sull'istanza condivisa;
+  - quelli solo HTTP, senza semantica browser.
+
+  Il motivo è scritto in ogni `test.skip` e nel README.
+
+  _In locale con 4 worker invece di 8: con la memoria della macchina quasi esaurita da altre applicazioni, 8 worker e 14 container mandavano in timeout Firefox e WebKit per attesa sul disco. La CI resta il riferimento._
+- [x] Ripetere i nuovi scenari senza retry automatici per controllare isolamento, cleanup e stabilità; non aumentare globalmente timeout o retry per nascondere interferenze.
+
+  I nuovi file sui tre project browser, con `--repeat-each=3 --retries=0 --workers=1`: 90/90. Il project del riavvio ripetuto 2 volte: 6/6. Timeout e retry globali sono invariati.
+
+  La CI della PR finale ha segnalato un test instabile preesistente: «più sequence hanno cursori distinti» in `sequences.spec.js`, passato al retry. La causa era l'healthcheck di `mockxy-sequence-admin`, che interroga ogni secondo proprio `/sequence-admin` e ne consumava gli step fra una selezione e la lettura del cursore.
+  - **Riprodotto:** 1 fallimento su 40 ripetizioni.
+  - **Corretto:** rotta di prontezza dedicata `/sequence-admin-ready`, con la regola scritta nel README.
+  - **Verificato:** senza test in corso il Monitor non registra più richieste a `/sequence-admin`; poi 40/40 sul test e 30/30 sul file ripetuto.
+- [x] Per ogni garanzia centrale dimostrare che la prova distingue comportamento corretto e scorretto, con una controprova mirata o un'altra evidenza equivalente. Rimuovere le alterazioni temporanee e annotare quali asserzioni rilevano la regressione.
+
+  Le controprove sono elencate per passo nelle evidenze e nelle PR #7–#11. Le alterazioni del motore sono state applicate solo ai container in esecuzione, poi ricreati dall'immagine.
+- [x] Verificare la coppia suite / motore `v1.4.1` e il funzionamento della CI con il normale ref corrente. I workflow già costruiscono il motore e consumano questa suite: modificarli solo per esigenze concrete dei nuovi scenari.
+
+  Suite contro `v1.4.1`, con `../mockxy` sul tag e le immagini ricostruite:
+  - firefox 51 e webkit 51, tutti verdi;
+  - chromium 90 su 91: fallisce solo l'asserzione nuova sull'assenza di `x-mock-source` nel mock salvato, comportamento corretto dopo la 1.4.1 da mockxy#42 (atteso);
+  - chromium-stack-mutating 1 e chromium-config-restart 3, eseguiti con `--no-deps`.
+
+  Poi il motore è tornato su `main`, con le immagini ricostruite. Il dispatch manuale del workflow con `engine-ref=v1.4.1` non era permesso dal token disponibile (403), quindi la verifica è stata locale. La CI della PR usa il ref normale (`main`). I workflow non sono stati modificati.
+- [x] Aggiornare il README: topologia, coperture, comandi e isolamento. Correggere riferimenti obsoleti senza introdurre conteggi dei test destinati a diventare subito vecchi.
+
+  Topologia, tabella di proprietà dello stato e righe di copertura sono state aggiornate passo per passo. Nella verifica finale:
+  - browser e prerequisiti, compreso il CLI `docker compose`, resi attuali;
+  - tolti i conteggi «jest, 400+» e «una dozzina di scenari»;
+  - nuovi scenari aggiunti all'elenco dei test stateful.
+- [x] Mantenere nel repository `mockxy` i test della GUI Angular, delle bozze e dell'upload corretto dalla #40: lo stack standalone di questa suite non contiene quella GUI.
+
+  Nessun test della GUI è stato spostato. Il README lo dichiara nel perimetro della suite.
 - [ ] Concludere con tutte le righe di avanzamento aggiornate, PR integrate, eventuali limiti espliciti e nessuna fixture versionata lasciata modificata dalle esecuzioni.
+
+  Righe T0–T5 completate, con le PR #7–#11 integrate. I limiti sono dichiarati nelle PR e nel README. Dopo le esecuzioni `git status` mostra solo le modifiche intenzionali, quindi nessuna fixture versionata è stata alterata. _Si chiude dopo il merge della PR della verifica finale._

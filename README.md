@@ -2,12 +2,12 @@
 
 Suite di test **di sistema** che esercita Mockxy dall'esterno, come lo vede un consumatore
 reale: l'**immagine Docker standalone** (costruita da `../mockxy`, non una copia del
-codice) nella topologia completa «browser → Mockxy → backend», con un **browser vero**
-(Playwright/Chromium) come client.
+codice) nella topologia completa «browser → Mockxy → backend», con **browser veri**
+(Playwright: Chromium, Firefox e WebKit) come client.
 
 ## Perché esistono, e cosa NON sono
 
-I test interni del progetto (jest, 400+) coprono la logica del motore a livello HTTP, ma tre
+I test interni del progetto (jest) coprono la logica del motore a livello HTTP, ma tre
 classi di comportamento sono fuori dalla loro portata **per costruzione**:
 
 1. **La semantica browser** — CORS, preflight e loro cache, credenziali, cookie `SameSite`:
@@ -21,8 +21,13 @@ classi di comportamento sono fuori dalla loro portata **per costruzione**:
    riscrittura punterebbero a un host irraggiungibile, cookie che attraversano due hop.
 
 Questi test **non sostituiscono** quelli interni e non ne duplicano la matrice (filtri,
-paginazione, CRUD dell'admin API…): sono una dozzina di scenari mirati alle tre classi sopra.
-Quando un comportamento è testabile bene da jest, va testato lì.
+paginazione, CRUD dell'admin API…): sono scenari mirati alle tre classi sopra. Gli scenari del
+pilotaggio da agent (discovery, setup ripetibile, stream durante i reload, configurazione
+effimera, cattura e riproduzione) usano l'admin API dell'artefatto distribuito con rete,
+browser e filesystem reali. Quando un comportamento è testabile bene da jest, va testato lì.
+
+Restano nel repository `mockxy` i test della GUI Angular (bozze, sincronizzazione, upload dopo
+una creazione): lo stack standalone di questa suite non contiene la GUI.
 
 ## Architettura dello stack
 
@@ -71,14 +76,15 @@ L'istanza principale espone anche l'**admin API** (`ADMIN_API_ENABLED=true` +
 
 ## Come si lancia
 
-Prerequisiti: Docker Desktop attivo, Node ≥ 20.
+Prerequisiti: Docker con il CLI `docker compose` (alcuni test lo usano direttamente per
+modificare file nei container, riavviarli o metterli in pausa), Node ≥ 20.
 
 ```bash
-npm install                       # solo la prima volta
-npx playwright install chromium   # solo la prima volta
-npm run stack:up                  # costruisce l'immagine e avvia lo stack completo
-npm test                          # esegue la suite Playwright
-npm run stack:down                # spegne lo stack
+npm install                                     # solo la prima volta
+npx playwright install chromium firefox webkit  # solo la prima volta
+npm run stack:up                                # costruisce le immagini e avvia lo stack completo
+npm test                                        # esegue la suite Playwright
+npm run stack:down                              # spegne lo stack
 ```
 
 Lo stack resta su tra un run e l'altro: in iterazione basta `npm test`. Se i container non
@@ -87,10 +93,11 @@ sono su, il setup globale fallisce subito con un messaggio esplicito. Per vedere
 
 La suite gira su **tre motori browser** (Chromium, Firefox, WebKit): le semantiche sotto
 test — CORS, cookie, preflight, SSE — sono proprio quelle che divergono tra i motori. I test
-stateful (sequence, shared runtime state, hot reload e cache dei preflight) si autolimitano a
-Chromium perché mutano stato condiviso mentre i project girano in parallelo. Per il primo run:
-`npx playwright install chromium firefox webkit`. In CI c'è un retry automatico
-(`retries: 1` solo con `CI` impostata); in locale la flakiness resta visibile.
+stateful (sequence, shared runtime state, hot reload, cache dei preflight e gli scenari del
+pilotaggio da agent) si autolimitano a Chromium perché mutano stato condiviso mentre i project
+girano in parallelo: vedi [Isolamento e stato mutabile](#isolamento-e-stato-mutabile). In CI
+c'è un retry automatico (`retries: 1` solo con `CI` impostata); in locale la flakiness resta
+visibile.
 
 ## Isolamento e stato mutabile
 
@@ -119,7 +126,9 @@ Regole per le istanze nuove:
 - una nuova istanza amministrabile copia un seed minimo in tmpfs (`command` con `cp -R /seed/.`)
   e dichiara esplicitamente admin, allowlist Host, backend e CORS di cui ha bisogno;
 - ogni istanza è allineata in `docker-compose.yml` (con un healthcheck che verifica il serving
-  di una rotta di fixture), `tests/stack.js` e `tests/global-setup.js`;
+  di una rotta di fixture), `tests/stack.js` e `tests/global-setup.js`. L'healthcheck continua a
+  interrogare l'istanza ogni secondo anche dopo l'avvio: la sua rotta non deve avere stato che i
+  test osservano (una sequence, un contatore), altrimenti ne consuma i passi;
 - i test che riavviano o ricreano container vanno in un project dedicato, dopo i project browser:
   `chromium-stack-mutating` (`preflight-cache`) e poi `chromium-config-restart`
   (`runtime-config-restart`), in catena, così non girano mai in concorrenza nemmeno fra loro;

@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/sequence-admin-ready",
+  "description": "Rotta di prontezza dell'istanza: l'healthcheck non deve consumare la sequence di /sequence-admin",
+  "enabled": true,
+  "responseFiles": ["001.response.json"],
+  "selectedResponseFile": "001.response.json"
+}

@@ -161,6 +161,10 @@ test.describe("cattura e riproduzione del traffico", () => {
     for (const transport of ["date", "content-length", "transfer-encoding", "connection"]) {
       expect(Object.keys(variant.response.headers)).not.toContain(transport);
     }
+    // Neanche l'header tecnico con cui Mockxy dichiara chi ha risposto: catturato valeva
+    // "backend", e quello del mock lo imposta il serving (mockxy#42).
+    expect(full.responseHeaders["x-mock-source"], "la cattura lo contiene").toBe("backend");
+    expect(Object.keys(variant.response.headers).map((name) => name.toLowerCase())).not.toContain("x-mock-source");
     expect((await setup.read(`/mocks/${item.id}`, "Reading the endpoint")).endpoint.enabled).toBe(false);
 
     // Prima dell'attivazione il browser riceve ancora il backend.
