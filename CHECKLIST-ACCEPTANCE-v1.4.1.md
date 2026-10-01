@@ -156,6 +156,6 @@ Evidenze sulla suite del branch della verifica finale, con il motore `main` (`2b
 - [x] Mantenere nel repository `mockxy` i test della GUI Angular, delle bozze e dell'upload corretto dalla #40: lo stack standalone di questa suite non contiene quella GUI.
 
   Nessun test della GUI è stato spostato. Il README lo dichiara nel perimetro della suite.
-- [ ] Concludere con tutte le righe di avanzamento aggiornate, PR integrate, eventuali limiti espliciti e nessuna fixture versionata lasciata modificata dalle esecuzioni.
+- [x] Concludere con tutte le righe di avanzamento aggiornate, PR integrate, eventuali limiti espliciti e nessuna fixture versionata lasciata modificata dalle esecuzioni.
 
-  Righe T0–T5 completate, con le PR #7–#11 integrate. I limiti sono dichiarati nelle PR e nel README. Dopo le esecuzioni `git status` mostra solo le modifiche intenzionali, quindi nessuna fixture versionata è stata alterata. _Si chiude dopo il merge della PR della verifica finale._
+  Righe T0–T5 completate, con le PR #7–#11 integrate; la verifica finale è nella [#12](https://github.com/tosdan/mockxy-acceptance-tests/pull/12), integrata dopo una review di Codex senza rilievi (CI dell'ultimo commit: 197 passati, 80 skip, nessun test instabile). I limiti sono dichiarati nelle PR e nel README. Dopo le esecuzioni `git status` mostra solo le modifiche intenzionali, quindi nessuna fixture versionata è stata alterata.
