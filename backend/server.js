@@ -9,6 +9,9 @@ const zlib = require("zlib");
 
 const PORT = Number(process.env.PORT || 9000);
 const OWN_ORIGIN = `http://backend:${PORT}`;
+// Identità dell'istanza: lo stesso server gira come backend "a" e "b", per distinguere a quale
+// backend Mockxy inoltra una richiesta o un tunnel WebSocket.
+const BACKEND_ID = process.env.BACKEND_ID || "a";
 
 function sendJson(res, status, body, extraHeaders = {}) {
   const payload = JSON.stringify(body);
@@ -35,11 +38,25 @@ function readBody(req) {
 // risposta bloccata (preflight in cache): solo la seconda incrementa il contatore.
 let trackedPostCount = 0;
 
+// Arrivi per path sotto /identity/: dicono se, e quando, una richiesta ha raggiunto QUESTO
+// backend (per esempio una richiesta ancora nel ritardo di Mockxy non è ancora arrivata).
+const identityArrivals = new Map();
+
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, OWN_ORIGIN);
   const route = `${req.method} ${requestUrl.pathname}`;
 
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/identity/")) {
+    identityArrivals.set(requestUrl.pathname, (identityArrivals.get(requestUrl.pathname) || 0) + 1);
+    return sendJson(res, 200, { source: "backend", backend: BACKEND_ID, path: requestUrl.pathname });
+  }
+
   switch (route) {
+    case "GET /api/identity-arrivals": {
+      const arrivalPath = requestUrl.searchParams.get("path") || "";
+      return sendJson(res, 200, { backend: BACKEND_ID, path: arrivalPath, count: identityArrivals.get(arrivalPath) || 0 });
+    }
+
     case "GET /api/ping":
       return sendJson(res, 200, { source: "backend", pong: true });
 
@@ -225,7 +242,8 @@ function encodeWsTextFrame(text) {
 server.on("upgrade", (req, socket) => {
   const requestUrl = new URL(req.url, OWN_ORIGIN);
   const key = req.headers["sec-websocket-key"];
-  if (requestUrl.pathname !== "/ws/echo" || !key) {
+  const identity = requestUrl.pathname === "/ws/identity";
+  if ((requestUrl.pathname !== "/ws/echo" && !identity) || !key) {
     socket.destroy();
     return;
   }
@@ -239,7 +257,9 @@ server.on("upgrade", (req, socket) => {
   );
 
   // Push iniziato dal server: prova che il tunnel funziona anche nel verso backend → client.
-  socket.write(encodeWsTextFrame("hello from backend ws"));
+  // /ws/identity dichiara anche quale backend risponde, nel saluto e in ogni eco.
+  socket.write(encodeWsTextFrame(identity ? `hello from backend ${BACKEND_ID}` : "hello from backend ws"));
+  const echoPrefix = identity ? `echo from ${BACKEND_ID}: ` : "echo: ";
 
   let pending = Buffer.alloc(0);
   socket.on("data", (chunk) => {
@@ -258,7 +278,7 @@ server.on("upgrade", (req, socket) => {
         continue;
       }
       if (frame.opcode === 0x1) {
-        socket.write(encodeWsTextFrame(`echo: ${frame.payload.toString("utf8")}`));
+        socket.write(encodeWsTextFrame(`${echoPrefix}${frame.payload.toString("utf8")}`));
       }
     }
   });

@@ -171,6 +171,37 @@ services:
       - /workspace/mocks
       - /workspace/files
 
+  # Istanza della configurazione effimera (T4): override via PATCH /config su traffico nuovo,
+  # richieste già entrate e tunnel WebSocket aperti, riavvio che li elimina. Backend di avvio
+  # "a"; il secondo backend "b" serve a distinguere dove va il traffico dopo il cambio. Il log
+  # a livello info è usato dai test (riga "Request received." all'ingresso della richiesta).
+  # Proprietari: runtime-config.spec.js (Chromium, in ordine) e, dopo tutti gli altri project,
+  # runtime-config-restart.spec.js, che la riavvia nel project chromium-config-restart.
+  mockxy-config:
+    image: mockxy-standalone-under-test
+    depends_on:
+      - mockxy
+      - backend
+      - backend-b
+    healthcheck:
+      <<: *healthcheck-hello
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/agent-ready"]
+    environment:
+      ADMIN_API_ENABLED: "true"
+      ADMIN_ALLOWED_HOSTS: "localhost"
+      BACKEND_URL: "http://backend:9000"
+      PROXY_FALLBACK_ENABLED: "true"
+      CORS_ENABLED: "true"
+      LOG_LEVEL: "info"
+    command: ["sh", "-c", "cp -R /seed/. /workspace/mocks/ && exec node index.js"]
+    ports:
+      - "8005:3000"
+    volumes:
+      - ./workspace-agent/mocks:/seed:ro
+    tmpfs:
+      - /workspace/mocks
+      - /workspace/files
+
   # Istanza "commutabile" per il test della cache dei preflight: il test la ricrea a metà
   # corsa con TOGGLE_CORS_ENABLED=false e poi la ripristina. Dedicata: il riavvio non deve
   # toccare le istanze condivise dagli altri test.
@@ -259,6 +290,18 @@ services:
       - ./backend:/srv:ro
     ports:
       - "9090:9000"
+
+  # Secondo backend, stesso server con un'altra identità: la configurazione effimera (T4)
+  # sposta il traffico da "a" a "b". Pubblicato su 9091 per leggerne i contatori dall'host.
+  backend-b:
+    image: node:24-alpine
+    command: ["node", "/srv/server.js"]
+    environment:
+      BACKEND_ID: "b"
+    volumes:
+      - ./backend:/srv:ro
+    ports:
+      - "9091:9000"
 
   client:
     image: nginx:alpine
