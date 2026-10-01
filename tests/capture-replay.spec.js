@@ -1,3 +1,4 @@
+const http = require("http");
 const { test, expect } = require("@playwright/test");
 const stack = require("./stack");
 const { adminJson } = require("./admin-client");
@@ -46,6 +47,55 @@ async function captureFromBrowser(setup, routePath, action) {
   const traffic = await setup.readTraffic(cursor, filters, { until: (items) => items.length >= 1 });
   expect(traffic.items, `una sola cattura di GET ${routePath}`).toHaveLength(1);
   return { result, entry: traffic.items[0], runtimeId: cursor.runtimeId };
+}
+
+/**
+ * Proxy di test fra l'helper e mockxy-capture: inoltra ogni richiesta al motore reale; per
+ * create-mocks attende la risposta completa del motore (la creazione è avvenuta) e poi chiude la
+ * connessione verso il client senza consegnarla. Conta le richieste di creazione ricevute.
+ */
+async function startLosingProxy() {
+  const target = new URL(BASE);
+  let createRequests = 0;
+  const lostResponses = [];
+  const server = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      const isCreate = req.method === "POST" && req.url.startsWith("/_admin/api/monitoring/requests/create-mocks");
+      if (isCreate) {
+        createRequests += 1;
+      }
+      const upstream = http.request(
+        { host: target.hostname, port: target.port, method: req.method, path: req.url, headers: { ...req.headers, host: target.host } },
+        (upstreamResponse) => {
+          if (!isCreate) {
+            res.writeHead(upstreamResponse.statusCode, upstreamResponse.headers);
+            upstreamResponse.pipe(res);
+            return;
+          }
+          const body = [];
+          upstreamResponse.on("data", (chunk) => body.push(chunk));
+          upstreamResponse.on("end", () => {
+            lostResponses.push({ status: upstreamResponse.statusCode, body: JSON.parse(Buffer.concat(body).toString("utf8")) });
+            req.socket.destroy();
+          });
+        }
+      );
+      upstream.on("error", () => req.socket.destroy());
+      upstream.end(Buffer.concat(chunks));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    createRequests: () => createRequests,
+    lostResponses: () => lostResponses,
+    close: () => {
+      server.closeAllConnections();
+      return new Promise((resolve) => server.close(resolve));
+    },
+  };
 }
 
 test.describe("cattura e riproduzione del traffico", () => {
@@ -187,20 +237,29 @@ test.describe("cattura e riproduzione del traffico", () => {
     expect(await arrivals(request, routePath)).toBe(2);
   });
 
-  test("una risposta persa della creazione ferma il setup senza ripeterla e con i dati per ispezionare il catalogo", async ({ page }) => {
+  test("una risposta persa dopo la creazione ferma il setup senza ripeterla e con i dati per ispezionare il catalogo", async ({ page, request }) => {
     const routePath = uniquePath("/capture/receipt");
     const { entry, runtimeId } = await captureFromBrowser(setup, routePath, () => callFromBrowser(page, `${BASE}${routePath}`));
 
-    // add-variant rende visibile una ripetizione: una seconda richiesta aggiungerebbe una variante.
-    const lost = setup.createMocksFromMonitor(runtimeId, [entry.id], { onConflict: "add-variant", ...PREPARE }, { timeout: 1 });
-    await expect(lost).rejects.toMatchObject({ code: "CREATE_OUTCOME_UNKNOWN", details: { runtimeId, ids: [entry.id] } });
+    const proxy = await startLosingProxy();
+    try {
+      // add-variant rende visibile una ripetizione: una seconda richiesta aggiungerebbe una variante.
+      const viaProxy = new AgentSetup(request, proxy.baseUrl);
+      await viaProxy.connect({ mocksDir: MOCKS_DIR });
+      const lost = viaProxy.createMocksFromMonitor(runtimeId, [entry.id], { onConflict: "add-variant", ...PREPARE });
+      await expect(lost).rejects.toMatchObject({ code: "CREATE_OUTCOME_UNKNOWN", details: { runtimeId, ids: [entry.id] } });
 
-    // Le mutazioni sono serializzate: quando questa risponde, la creazione è conclusa, se è arrivata.
-    await setup.serveMocks();
-    const matches = (await adminJson(setup.request, BASE, "/mocks")).items.filter((item) => item.method === "GET" && item.path === routePath);
-    expect(matches.length, "al più un endpoint creato").toBeLessThanOrEqual(1);
-    if (matches.length === 1) {
-      expect(matches[0].responseCount, "nessuna ripetizione della creazione").toBe(1);
+      // Una sola richiesta, e il motore l'aveva completata: la risposta persa era un 201.
+      expect(proxy.createRequests(), "una sola richiesta di creazione, nessuna ripetizione").toBe(1);
+      expect(proxy.lostResponses()).toEqual([expect.objectContaining({ status: 201 })]);
+      expect(proxy.lostResponses()[0].body.items).toEqual([expect.objectContaining({ requestId: entry.id, writeOutcome: "created" })]);
+    } finally {
+      await proxy.close();
     }
+
+    // Il catalogo mostra esattamente ciò che è stato creato, una volta sola.
+    const matches = (await adminJson(request, BASE, "/mocks")).items.filter((item) => item.method === "GET" && item.path === routePath);
+    expect(matches, "un solo endpoint creato").toHaveLength(1);
+    expect(matches[0].responseCount, "una sola variante: la creazione non è stata ripetuta").toBe(1);
   });
 });
