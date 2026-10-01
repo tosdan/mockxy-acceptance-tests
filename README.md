@@ -107,7 +107,7 @@ comunque in parallelo, quindi due file non devono mutare lo stesso stato.
 | `mockxy-toggle` (:8060) | `preflight-cache` | il container, ricreato | project `chromium-stack-mutating`, dopo i tre browser |
 | `mockxy-discovery` (:8030) | nessuno: `discovery` la legge soltanto | nessuno (seed in tmpfs) | letture HTTP su Chromium, accesso cross-origin sui tre browser |
 | `mockxy-stream` (:8020) | `stream-reload` | file del tmpfs, connessioni SSE/WS e console | Chromium, in ordine in un solo worker; ogni test riparte dal seed |
-| `mockxy-config` (:8005) | `runtime-config`, poi `runtime-config-restart` | configurazione runtime, tunnel WebSocket, il container (riavviato) | Chromium, in ordine; il riavvio nel project `chromium-config-restart`, dopo tutti gli altri |
+| `mockxy-config` (:8005) | `runtime-config`, poi `runtime-config-restart` | configurazione runtime, tunnel WebSocket, il container (riavviato e messo in pausa) | Chromium, in ordine; il riavvio nel project `chromium-config-restart`, dopo tutti gli altri |
 | `backend` / `backend-b` (:9090 / :9091) | nessuno in esclusiva | contatori per path sotto `/identity/` (path unici per test) e di `/api/tracked` (`preflight-cache`) | — |
 | `mockxy-setup` (:8010) | `agent-setup` | catalogo in tmpfs, modalità server, configurazione runtime, Monitor | Chromium, in ordine in un solo worker; i casi non ripristinano niente fra loro, ogni test dichiara lo stato da cui dipende |
 
@@ -127,7 +127,10 @@ Regole per le istanze nuove:
   (`tests/admin-client.js`), mai dal browser: l'admin API non è leggibile cross-origin e non
   va resa tale per i test;
 - ogni test prepara lo stato da cui dipende e il cleanup lo ripristina anche dopo un
-  fallimento, così un retry non trova residui.
+  fallimento, così un retry non trova residui. Un cleanup che può dover attendere più del tempo
+  rimasto al test (per esempio un'istanza a metà di un riavvio) sta in un hook che si dà un
+  budget proprio con `testInfo.setTimeout` (vedi `tests/config-restore.js`). Gli hook ricevono il
+  timeout del test: oltre quello, il cleanup verrebbe interrotto.
 
 I test che usano solo il client HTTP (senza semantica browser) girano una volta, su Chromium:
 il motore del browser non cambia l'esito.

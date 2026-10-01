@@ -1,116 +1,108 @@
-const { execFileSync } = require("child_process");
+const { execFile, execFileSync } = require("child_process");
 const path = require("path");
+const { promisify } = require("util");
 const { test, expect } = require("@playwright/test");
-const stack = require("./stack");
-const { adminJson, adminSend } = require("./admin-client");
+const { adminJson } = require("./admin-client");
+const { BASE, SERVICE, FAILURE_PAUSE_MS, installStartupRestore, applyOverrides, waitForRuntime } = require("./config-restore");
 
 // Il riavvio elimina gli override della configurazione effimera (piano agent/API, §13 C8): nuovo
 // runtimeId, overrides vuoti ed effective uguale a startup; il vecchio cursore del Monitor
-// segnala runtime_changed. Riavvia un container: gira nel project chromium-config-restart, dopo
-// tutti gli altri e mai in concorrenza (vedi playwright.config.js).
+// segnala runtime_changed. Riavvia e mette in pausa un container: gira nel project
+// chromium-config-restart, dopo tutti gli altri e mai in concorrenza (vedi playwright.config.js).
 
-const BASE = stack.mockxyConfigBaseUrl;
 const COMPOSE_DIR = path.join(__dirname, "..");
-const SERVICE = "mockxy-config";
-const RESTART_TIMEOUT_MS = 60000;
-const OVERRIDES = { backendUrl: "http://backend-b:9000", corsEnabled: false, globalDelayMs: 50 };
-
-async function readInfo(request) {
-  try {
-    const response = await request.get(`${BASE}/_admin/api/info`, { timeout: 2000 });
-    return response.ok() ? response.json() : null;
-  } catch {
-    return null; // container in riavvio
-  }
-}
-
-/** Attende l'istanza raggiungibile, con un runtimeId diverso da `previousRuntimeId` se indicato. */
-async function waitForRuntime(request, previousRuntimeId = null) {
-  const deadline = Date.now() + RESTART_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const info = await readInfo(request);
-    if (info != null && info.runtimeId !== previousRuntimeId) {
-      return info;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-  throw new Error(`${SERVICE} non è raggiungibile${previousRuntimeId ? " con un nuovo runtimeId" : ""} entro ${RESTART_TIMEOUT_MS} ms`);
-}
+const FAILURE_CONFIG = path.join(__dirname, "config-restore-failure.config.js");
 
 /**
- * Riporta l'istanza alla configurazione di avvio: attende che risponda (può essere a metà di un
- * riavvio, con un'attesa limitata) e toglie ogni override.
+ * Esegue un test di config-restore-failure.inner.js in un processo Playwright figlio e ne
+ * restituisce lo stato: il ripristino si verifica dall'esterno, a processo concluso.
  */
-async function restoreStartup(request) {
-  await waitForRuntime(request);
-  const current = await adminJson(request, BASE, "/config");
-  const keys = Object.keys(current.overrides);
-  const state = keys.length > 0 ? await adminSend(request, BASE, "PATCH", "/config", { unset: keys }) : current;
-  expect(state.overrides).toEqual({});
-  expect(state.effective).toEqual(state.startup);
-}
-
-/** Esegue `action` partendo dalla configurazione di avvio e ci torna anche se `action` fallisce. */
-async function withStartupRestored(request, action) {
-  await restoreStartup(request);
+async function runInnerFailure(title) {
+  let stdout;
   try {
-    return await action();
+    ({ stdout } = await promisify(execFile)("npx", ["playwright", "test", "-c", FAILURE_CONFIG, "-g", title], {
+      cwd: COMPOSE_DIR,
+      maxBuffer: 16 * 1024 * 1024,
+    }));
+  } catch (error) {
+    stdout = error.stdout; // il test interno fallisce di proposito: exit code diverso da zero
   } finally {
-    await restoreStartup(request);
+    // Anche se qualcosa è andato storto, l'istanza non resta in pausa.
+    try {
+      execFileSync("docker", ["compose", "unpause", SERVICE], { cwd: COMPOSE_DIR, stdio: "ignore" });
+    } catch {
+      /* non era in pausa */
+    }
   }
-}
-
-async function applyOverrides(request) {
-  const state = await adminSend(request, BASE, "PATCH", "/config", { set: OVERRIDES });
-  expect(Object.keys(state.overrides).sort()).toEqual(Object.keys(OVERRIDES).sort());
-  return state;
+  const report = JSON.parse(stdout);
+  const results = report.suites.flatMap(function collect(suite) {
+    return [...(suite.specs ?? []).flatMap((spec) => spec.tests.flatMap((t) => t.results)), ...(suite.suites ?? []).flatMap(collect)];
+  });
+  expect(results, `un solo risultato per "${title}"`).toHaveLength(1);
+  return results[0];
 }
 
 test.describe("riavvio della configurazione effimera", () => {
-  // Due test sulla stessa istanza: in ordine, in un solo worker.
+  // Tre test sulla stessa istanza: in ordine, in un solo worker.
   test.describe.configure({ mode: "default" });
+  installStartupRestore(test);
 
-  test("un fallimento prima del riavvio non lascia override sull'istanza", async ({ request }) => {
-    // Il caso riprodotto in review: override applicati, poi il comando Docker che fallisce.
-    await expect(
-      withStartupRestored(request, async () => {
-        await applyOverrides(request);
-        throw new Error("docker compose restart fallito (simulato)");
-      })
-    ).rejects.toThrow("simulato");
+  test("un errore subito dopo gli override non li lascia sull'istanza", async ({ request }) => {
+    test.setTimeout(120000);
+    const result = await runInnerFailure("errore subito dopo gli override");
+    expect(result.status).toBe("failed");
+    expect(result.error?.message).toContain("simulato");
 
     const config = await adminJson(request, BASE, "/config");
     expect(config.overrides).toEqual({});
     expect(config.effective).toEqual(config.startup);
   });
 
+  test("una scadenza del test con l'istanza irraggiungibile non lascia override", async ({ request }) => {
+    test.setTimeout(120000);
+    const started = Date.now();
+    const result = await runInnerFailure("scadenza con l'istanza irraggiungibile");
+    expect(result.status).toBe("timedOut");
+    // Condizione della prova: il ripristino ha dovuto attendere tutta la pausa, oltre il budget
+    // normale dell'hook. Una riattivazione anticipata (per esempio rimasta da un'esecuzione
+    // interrotta) renderebbe la prova inconcludente.
+    expect(
+      Date.now() - started,
+      "l'istanza non è rimasta irraggiungibile per tutta la pausa: la prova non ha stabilito le sue condizioni"
+    ).toBeGreaterThanOrEqual(FAILURE_PAUSE_MS);
+
+    // Se il ripristino non l'ha già fatto, l'istanza è appena uscita dalla pausa.
+    await waitForRuntime(request);
+    const config = await adminJson(request, BASE, "/config");
+    expect(config.overrides).toEqual({});
+    expect(config.effective).toEqual(config.startup);
+  });
+
   test("il riavvio elimina gli override e il vecchio cursore del Monitor segnala runtime_changed", async ({ page, request }) => {
-    await withStartupRestored(request, async () => {
-      const before = await adminJson(request, BASE, "/info");
-      const overridden = await applyOverrides(request);
-      const cursor = (await adminJson(request, BASE, "/monitoring/requests?view=page&since=latest")).cursor;
-      expect(cursor.runtimeId).toBe(before.runtimeId);
+    const before = await adminJson(request, BASE, "/info");
+    const overridden = await applyOverrides(request);
+    const cursor = (await adminJson(request, BASE, "/monitoring/requests?view=page&since=latest")).cursor;
+    expect(cursor.runtimeId).toBe(before.runtimeId);
 
-      execFileSync("docker", ["compose", "restart", SERVICE], { cwd: COMPOSE_DIR, stdio: "ignore" });
-      const after = await waitForRuntime(request, before.runtimeId);
+    execFileSync("docker", ["compose", "restart", SERVICE], { cwd: COMPOSE_DIR, stdio: "ignore" });
+    const after = await waitForRuntime(request, before.runtimeId);
 
-      const config = await adminJson(request, BASE, "/config");
-      expect(config.runtimeId).toBe(after.runtimeId);
-      expect(config.overrides).toEqual({});
-      expect(config.effective).toEqual(config.startup);
-      expect(config.startup).toEqual(overridden.startup);
-      expect(config.persisted).toBe(false);
-      expect(after.revisions.config).toBe(1);
+    const config = await adminJson(request, BASE, "/config");
+    expect(config.runtimeId).toBe(after.runtimeId);
+    expect(config.overrides).toEqual({});
+    expect(config.effective).toEqual(config.startup);
+    expect(config.startup).toEqual(overridden.startup);
+    expect(config.persisted).toBe(false);
+    expect(after.revisions.config).toBe(1);
 
-      // Il traffico nuovo usa di nuovo la configurazione di avvio: backend "a" e CORS attivo.
-      await page.goto("/");
-      const served = await page.evaluate((url) => window.callApi(url), `${BASE}/identity/dopo-il-riavvio-${Date.now()}`);
-      expect(served).toMatchObject({ blocked: false, status: 200, body: { backend: "a" } });
+    // Il traffico nuovo usa di nuovo la configurazione di avvio: backend "a" e CORS attivo.
+    await page.goto("/");
+    const served = await page.evaluate((url) => window.callApi(url), `${BASE}/identity/dopo-il-riavvio-${Date.now()}`);
+    expect(served).toMatchObject({ blocked: false, status: 200, body: { backend: "a" } });
 
-      const query = new URLSearchParams({ view: "page", since: cursor.since, runtimeId: cursor.runtimeId, generation: String(cursor.generation) });
-      const monitorPage = await adminJson(request, BASE, `/monitoring/requests?${query}`);
-      expect(monitorPage).toMatchObject({ gap: true, gapReason: "runtime_changed" });
-      expect(monitorPage.cursor.runtimeId).toBe(after.runtimeId);
-    });
+    const query = new URLSearchParams({ view: "page", since: cursor.since, runtimeId: cursor.runtimeId, generation: String(cursor.generation) });
+    const monitorPage = await adminJson(request, BASE, `/monitoring/requests?${query}`);
+    expect(monitorPage).toMatchObject({ gap: true, gapReason: "runtime_changed" });
+    expect(monitorPage.cursor.runtimeId).toBe(after.runtimeId);
   });
 });
