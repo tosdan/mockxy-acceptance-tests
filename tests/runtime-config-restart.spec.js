@@ -1,4 +1,6 @@
 const { execFile, execFileSync } = require("child_process");
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { promisify } = require("util");
 const { test, expect } = require("@playwright/test");
@@ -13,19 +15,50 @@ const { BASE, SERVICE, FAILURE_PAUSE_MS, installStartupRestore, applyOverrides, 
 const COMPOSE_DIR = path.join(__dirname, "..");
 const FAILURE_CONFIG = path.join(__dirname, "config-restore-failure.config.js");
 
+const MARKER_TIMEOUT_MS = 30000;
+
+async function readMarker(file, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (fs.existsSync(file)) {
+      return Number(fs.readFileSync(file, "utf8"));
+    }
+    if (Date.now() >= deadline) {
+      return null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
 /**
- * Esegue un test di config-restore-failure.inner.js in un processo Playwright figlio e ne
- * restituisce lo stato: il ripristino si verifica dall'esterno, a processo concluso.
+ * Esegue un test di config-restore-failure.inner.js in un processo Playwright figlio, con una
+ * cartella temporanea propria per artefatti e marcatori, e ne restituisce lo stato e gli istanti
+ * di pausa e ripresa dell'istanza (null se il test non l'ha messa in pausa). Il ripristino si
+ * verifica dall'esterno, a processo concluso.
  */
-async function runInnerFailure(title) {
+async function runInnerFailure(testInfo, title) {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "mockxy-config-restore-"));
+  // Un artefatto della suite principale deve sopravvivere al processo figlio.
+  const sentinel = testInfo.outputPath("artefatto-della-suite.txt");
+  fs.writeFileSync(sentinel, "deve restare dopo il processo figlio\n");
   let stdout;
+  let pausedAt = null;
+  let resumedAt = null;
   try {
-    ({ stdout } = await promisify(execFile)("npx", ["playwright", "test", "-c", FAILURE_CONFIG, "-g", title], {
-      cwd: COMPOSE_DIR,
-      maxBuffer: 16 * 1024 * 1024,
-    }));
-  } catch (error) {
-    stdout = error.stdout; // il test interno fallisce di proposito: exit code diverso da zero
+    try {
+      ({ stdout } = await promisify(execFile)("npx", ["playwright", "test", "-c", FAILURE_CONFIG, "-g", title], {
+        cwd: COMPOSE_DIR,
+        env: { ...process.env, CONFIG_RESTORE_RUN_DIR: runDir },
+        maxBuffer: 16 * 1024 * 1024,
+      }));
+    } catch (error) {
+      stdout = error.stdout; // il test interno fallisce di proposito: exit code diverso da zero
+    }
+    pausedAt = await readMarker(path.join(runDir, "paused-at"), 0);
+    if (pausedAt != null) {
+      // La ripresa la scrive il processo staccato, subito dopo l'unpause riuscito.
+      resumedAt = await readMarker(path.join(runDir, "resumed-at"), MARKER_TIMEOUT_MS);
+    }
   } finally {
     // Anche se qualcosa è andato storto, l'istanza non resta in pausa.
     try {
@@ -33,13 +66,15 @@ async function runInnerFailure(title) {
     } catch {
       /* non era in pausa */
     }
+    fs.rmSync(runDir, { recursive: true, force: true });
   }
+  expect(fs.existsSync(sentinel), "il processo figlio non tocca gli artefatti della suite").toBe(true);
   const report = JSON.parse(stdout);
   const results = report.suites.flatMap(function collect(suite) {
     return [...(suite.specs ?? []).flatMap((spec) => spec.tests.flatMap((t) => t.results)), ...(suite.suites ?? []).flatMap(collect)];
   });
   expect(results, `un solo risultato per "${title}"`).toHaveLength(1);
-  return results[0];
+  return { result: results[0], pausedAt, resumedAt };
 }
 
 test.describe("riavvio della configurazione effimera", () => {
@@ -47,9 +82,9 @@ test.describe("riavvio della configurazione effimera", () => {
   test.describe.configure({ mode: "default" });
   installStartupRestore(test);
 
-  test("un errore subito dopo gli override non li lascia sull'istanza", async ({ request }) => {
+  test("un errore subito dopo gli override non li lascia sull'istanza", async ({ request }, testInfo) => {
     test.setTimeout(120000);
-    const result = await runInnerFailure("errore subito dopo gli override");
+    const { result } = await runInnerFailure(testInfo, "errore subito dopo gli override");
     expect(result.status).toBe("failed");
     expect(result.error?.message).toContain("simulato");
 
@@ -58,18 +93,16 @@ test.describe("riavvio della configurazione effimera", () => {
     expect(config.effective).toEqual(config.startup);
   });
 
-  test("una scadenza del test con l'istanza irraggiungibile non lascia override", async ({ request }) => {
+  test("una scadenza del test con l'istanza irraggiungibile non lascia override", async ({ request }, testInfo) => {
     test.setTimeout(120000);
-    const started = Date.now();
-    const result = await runInnerFailure("scadenza con l'istanza irraggiungibile");
+    const { result, pausedAt, resumedAt } = await runInnerFailure(testInfo, "scadenza con l'istanza irraggiungibile");
     expect(result.status).toBe("timedOut");
-    // Condizione della prova: il ripristino ha dovuto attendere tutta la pausa, oltre il budget
-    // normale dell'hook. Una riattivazione anticipata (per esempio rimasta da un'esecuzione
-    // interrotta) renderebbe la prova inconcludente.
-    expect(
-      Date.now() - started,
-      "l'istanza non è rimasta irraggiungibile per tutta la pausa: la prova non ha stabilito le sue condizioni"
-    ).toBeGreaterThanOrEqual(FAILURE_PAUSE_MS);
+    // Condizione della prova: l'istanza è rimasta in pausa per tutta la durata prevista, oltre il
+    // budget normale dell'hook. Il marcatore di ripresa esiste solo se l'unpause è riuscito, cioè
+    // se nessun altro l'aveva già riattivata: senza, la prova sarebbe inconcludente.
+    expect(pausedAt, "la pausa dell'istanza non è riuscita").not.toBeNull();
+    expect(resumedAt, "l'istanza non era più in pausa alla ripresa prevista: la prova non ha stabilito le sue condizioni").not.toBeNull();
+    expect(resumedAt - pausedAt, "durata effettiva della pausa").toBeGreaterThanOrEqual(FAILURE_PAUSE_MS);
 
     // Se il ripristino non l'ha già fatto, l'istanza è appena uscita dalla pausa.
     await waitForRuntime(request);
