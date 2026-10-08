@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/shared-helper/:nome",
+  "description": "Handler che usa un helper condiviso con l'alias #shared/: copre mocks/package.json su un mount in sola lettura",
+  "enabled": true,
+  "responseFiles": [
+    "001.response.json"
+  ],
+  "selectedResponseFile": "001.response.json"
+}

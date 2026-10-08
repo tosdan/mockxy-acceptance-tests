@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/shared-helper/annidato/in/profondita/:nome",
+  "description": "Stesso import #shared/ di /shared-helper/:nome, da una cartella più profonda",
+  "enabled": true,
+  "responseFiles": [
+    "001.response.json"
+  ],
+  "selectedResponseFile": "001.response.json"
+}
