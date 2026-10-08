@@ -1,0 +1,5 @@
+{
+  "type": "handler",
+  "title": "Saluto dall'helper condiviso",
+  "sourceFile": "001.handler.js"
+}

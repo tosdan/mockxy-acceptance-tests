@@ -43,6 +43,7 @@ const OPERATIONS_USED = [
   ["get", "/config", "getRuntimeConfig"],
   ["patch", "/config", "patchRuntimeConfig"],
   ["get", "/runtime/status", "getRuntimeStatus"],
+  ["post", "/scripts/validate", "validateWorkspaceScripts"],
   ["get", "/openapi.yaml", "getAdminOpenapi"],
   ["get", "/mocks", "listMocks"],
   ["get", "/mocks/{id}", "getMock"],
